@@ -44,7 +44,7 @@ if check ocamlfind; then
         exit 2
     fi
 else
-    echo 'Cannot find ocamlfind in path' &>2
+    echo 'Cannot find ocamlfind in path' >&2
     exit 2
 fi
 

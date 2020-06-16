@@ -144,7 +144,7 @@ Proof.
   intros A B r cond; unfold Is_true; destruct cond; auto.
 Qed.
 
-Implicit Arguments zenon_coqbool_ite_rel_l [A B].
+Arguments zenon_coqbool_ite_rel_l [A B].
 
 Lemma zenon_coqbool_ite_rel_r :
   forall (A B : Type) (r: A -> B -> Prop) (e1 : A) (cond : bool) (thn els : B),
@@ -155,7 +155,7 @@ Proof.
   intros A B r e1 cond; unfold Is_true; destruct cond; auto.
 Qed.
 
-Implicit Arguments zenon_coqbool_ite_rel_r [A B].
+Arguments zenon_coqbool_ite_rel_r [A B].
 
 Lemma zenon_coqbool_ite_rel_nl :
   forall (A B : Type) (r: A -> B -> Prop) (cond : bool) (thn els : A) (e2 : B),
@@ -166,7 +166,7 @@ Proof.
   intros A B r cond; unfold Is_true; destruct cond; auto.
 Qed.
 
-Implicit Arguments zenon_coqbool_ite_rel_nl [A B].
+Arguments zenon_coqbool_ite_rel_nl [A B].
 
 Lemma zenon_coqbool_ite_rel_nr :
   forall (A B : Type) (r: A -> B -> Prop) (e1 : A) (cond : bool) (thn els : B),
@@ -177,7 +177,7 @@ Proof.
   intros A B r e1 cond; unfold Is_true; destruct cond; auto.
 Qed.
 
-Implicit Arguments zenon_coqbool_ite_rel_nr [A B].
+Arguments zenon_coqbool_ite_rel_nr [A B].
 
 (* ************************************************ *)
 
@@ -217,19 +217,19 @@ Definition zenon_coqbool_ite_rel_l_s :=
   fun A B r i t e e2 c h1 h2
   => @zenon_coqbool_ite_rel_l A B r i t e e2 h1 h2 c
 .
-Implicit Arguments zenon_coqbool_ite_rel_l_s [A B].
+Arguments zenon_coqbool_ite_rel_l_s [A B].
 Definition zenon_coqbool_ite_rel_r_s :=
   fun A B r e1 i t e c h1 h2
   => @zenon_coqbool_ite_rel_r A B r e1 i t e h1 h2 c
 .
-Implicit Arguments zenon_coqbool_ite_rel_r_s [A B].
+Arguments zenon_coqbool_ite_rel_r_s [A B].
 Definition zenon_coqbool_ite_rel_nl_s :=
   fun A B r i t e e2 c h1 h2
   => @zenon_coqbool_ite_rel_nl A B r i t e e2 h1 h2 c
 .
-Implicit Arguments zenon_coqbool_ite_rel_nl_s [A B].
+Arguments zenon_coqbool_ite_rel_nl_s [A B].
 Definition zenon_coqbool_ite_rel_nr_s :=
   fun A B r e1 i t e c h1 h2
   => @zenon_coqbool_ite_rel_nr A B r e1 i t e h1 h2 c
 .
-Implicit Arguments zenon_coqbool_ite_rel_nr_s [A B].
+Arguments zenon_coqbool_ite_rel_nr_s [A B].

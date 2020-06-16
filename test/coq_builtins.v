@@ -2,7 +2,7 @@
 (*                                                                            *)
 (*                        FoCaLiZe compiler                                   *)
 (*                                                                            *)
-(*            François Pessaux                                                *)
+(*            FranÃ§ois Pessaux                                                *)
 (*            Pierre Weis                                                     *)
 (*            Damien Doligez                                                  *)
 (*                                                                            *)
@@ -373,7 +373,7 @@ Opaque Is_true.
 
 (* conversion of decidable functions into booleans *
  * (for instance eq. on setoids). A is implicit *)
-Set Implicit Arguments.
+Set Arguments.
 Unset Strict Implicit.
 Definition dec_to_bool (A : Prop) (dec : {A} + {~ A}) :=
   if dec return bool then true else false.
@@ -395,7 +395,7 @@ elim dec; compute in |- *; auto.
 Qed.
 
 Set Strict Implicit.
-Unset Implicit Arguments.
+Unset Arguments.
 
 (* A simple wf relation on Z *)
 Require Import ZArith.

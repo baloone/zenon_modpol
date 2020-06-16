@@ -78,7 +78,7 @@ Ltac arith_norm_in H :=
   repeat rewrite qneg in H.
 
 Ltac arith_unfold :=
-  unfold Qplus, Qminus, Qmult, Qeq, Qle, Qlt, Zdiv;
+  unfold Qplus, Qminus, Qmult, Qeq, Qle, Qlt, Z.div;
   try repeat rewrite Qmult_1_l;
   try repeat rewrite Qmult_1_r;
   unfold Qnum, Qden;
@@ -86,7 +86,7 @@ Ltac arith_unfold :=
   try repeat rewrite Z.mul_1_r.
 
 Ltac arith_unfold_in H :=
-  unfold Qplus, Qminus, Qmult, Qeq, Qle, Qlt, Zdiv in H;
+  unfold Qplus, Qminus, Qmult, Qeq, Qle, Qlt, Z.div in H;
   try repeat rewrite Qmult_1_l in H;
   try repeat rewrite Qmult_1_r in H;
   unfold Qnum, Qden in H;
@@ -192,7 +192,7 @@ Qed.
 
 (* Lemma on floor&ceilling functions require a bit more *)
 Lemma floor_1 : forall a: Z, Qfloor (a # 1) = a.
-Proof. intros. unfold Qfloor. apply Zdiv_1_r. Qed.
+Proof. intros. unfold Qfloor. apply Z.div_1_r. Qed.
 
 Lemma arith_tight_leq : forall a: Z, forall b:Q, a # 1 <= b -> a # 1 <= (Qfloor b) # 1.
 Proof.
@@ -201,7 +201,7 @@ rewrite <- (floor_1 a). apply Qfloor_resp_le. trivial.
 Qed.
 
 Lemma ceiling_1 : forall a: Z, Qceiling (a # 1) = a.
-Proof. intros. unfold Qceiling, Qfloor. simpl. rewrite Zdiv_1_r. rewrite Z.opp_involutive. trivial. Qed.
+Proof. intros. unfold Qceiling, Qfloor. simpl. rewrite Z.div_1_r. rewrite Z.opp_involutive. trivial. Qed.
 
 Lemma arith_tight_geq : forall a: Z, forall b:Q, a # 1 >= b -> a # 1 >= (Qceiling b) # 1.
 Proof.
