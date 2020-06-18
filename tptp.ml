@@ -34,7 +34,7 @@ let add_ignore_directive ext fname =
 
 let keep form =
   match form with
-  | Rew (name, _, _)
+  | Rew (name, _, _, _)
   | Hyp (name, _, _) -> not (List.mem name !to_ignore)
   | Def _
   | Sig _
@@ -109,12 +109,12 @@ let process_annotations forms =
          make_definition name form (make_annot_expr body) kind
        else
          Hyp (tptp_to_coq name, make_annot_expr body, kind)
-    | Rew (name, body, kind) ->
+    | Rew (name, body, kind, sign) ->
        Log.debug 15 "Process Annotation '%a'" Print.pp_expr body;
        if List.mem name !eq_defs then
          make_definition name form (make_annot_expr body) kind
        else
-         Rew (tptp_to_coq name, make_annot_expr body, kind)
+         Rew (tptp_to_coq name, make_annot_expr body, kind, sign)
     | Def _
     | Sig _
     | Inductive _
@@ -122,7 +122,9 @@ let process_annotations forms =
   in
   List.rev (List.rev_map process_one (List.filter keep forms))
 ;;
-
+let get_formula_type = function
+    | Formula (_, s, _, _) -> s
+    | _ -> assert false;;
 let rec translate_one dirs accu p =
   match p with
   | Include (f, None) -> try_incl dirs f accu
@@ -149,12 +151,11 @@ let rec translate_one dirs accu p =
       Hyp ("ax_"^name, body, 12) :: accu
   | Formula (name, "tff_hypothesis", body, None) ->
       Hyp ("ax_"^name, body, 11) :: accu
-  | Formula (name, ("tff_axiom" | "tff_definition"), body, Some "rewrite") ->
-     if !Globals.modulo then Rew (name, body, 12) :: accu
+  | Formula (name, ("tff_hypothesis" | "tff_axiom" | "tff_definition"), body, Some r) ->
+     let r = match r with "rewrite+" -> RPositive | "rewrite-" -> RNegative | _ -> assert false in
+     let f = if (get_formula_type p) = "tff_hypothesis" then 11 else 12 in 
+     if !Globals.modulo then Rew (name, body, f, r) :: accu
      else Hyp ("ax_"^name, body, 12) :: accu
-  | Formula (name, "tff_hypothesis", body, Some "rewrite") ->
-     if !Globals.modulo then Rew (name, body, 11) :: accu
-     else Hyp ("ax_"^name, body, 11) :: accu
   | Formula (name, ("tff_lemma"|"tff_theorem"), body, None) ->
       Hyp (name, body, 11) :: accu
   | Formula (name, "tff_conjecture", body, None) ->

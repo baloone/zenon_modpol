@@ -674,7 +674,7 @@ let get_rwrt_from_def = function
 exception Bad_Rewrite_Rule of string * expr;;
 
 let rec select_rwrt_rules_aux accu phrase =
-  match phrase with
+  (*match phrase with
   | Rew (name, body, flag)
        when (flag = 2) || (flag = 1)
     ->
@@ -737,11 +737,12 @@ let rec select_rwrt_rules_aux accu phrase =
      let (name, body) = get_rwrt_from_def d in
      add_rwrt_term name body;
      phrase :: accu
-  | _ -> phrase :: accu
+  | _ -> phrase :: accu*) ()
 ;;
 
 let select_rwrt_rules phrases =
   Log.debug 1 "====================";
   Log.debug 1 "Select Rewrite Rules";
-  List.rev (List.fold_left select_rwrt_rules_aux [] phrases)
+  phrases
+  (*List.rev (List.fold_left select_rwrt_rules_aux [] phrases)*)
 ;;
