@@ -766,7 +766,10 @@ and substitute_unsafe map e =
         eeq (substitute_unsafe map a) (substitute_unsafe map b)
     end
   | Eapp (s, args, _) ->
-     eapp (s, List.map (substitute_unsafe map) args)
+     begin try eapp (s, List.map (substitute_unsafe map) args)
+     with Type_Mismatch _ -> let t = substitute_unsafe map (get_type s) in
+       eapp (tvar (get_name s) t, List.map (substitute_unsafe map) args)    
+     end
   | Enot (f, _) ->
      enot (substitute_unsafe map f)
   | Eand (f, g, _) ->

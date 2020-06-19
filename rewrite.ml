@@ -13,19 +13,22 @@ let tbl_term = ref (Hashtbl.create 42);;
 let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
-
-type rwrt_rule = Positive of expr * expr | Negative of expr * expr;;
+type rwrt_rule = bool * expr * expr;;
 let pexp = Print.expr_soft (Print.Chan stdout);;
-let print_rule r = let sign = match r with Positive _ -> "+" | _ -> "-" in
-  match r with Positive(e1, e2) | Negative(e1, e2) -> 
+let print_rule r = let sign = match r with b,_,_ -> if b then "+" else "-" in
+  match r with (_, e1, e2) -> 
     print_endline "Rewrite rule :"; pexp e1; print_string (" --->"^sign^" "); pexp e2; print_endline ""
 ;;
+
+let rules = ref [];;
 
 let rec ( @@ ) l = function 
   | [] -> l
   | t::q -> let q' = (l@@q) in if List.mem t q' then q' else t::q'
 ;;
 let ( % ) f g = fun x -> f (g x);;
+
+
 let rec is_lit = function
   | Evar _ | Eapp (Evar _, _, _) -> true
   | Enot (e, _) -> is_lit e 
@@ -35,12 +38,12 @@ let rec pos_rul e1 e2 = match e1 with
   | Enot(e1', _) -> begin match e2 with 
     | Enot(e2', _) -> neg_rul e1' e2'
     | _ -> neg_rul e1' (enot e2) end
-  | _ -> Positive(e1, e2) 
+  | _ -> (true, e1, e2) 
 and neg_rul e1 e2 = match e1 with 
   | Enot(e1', _) -> begin match e2 with 
     | Enot(e2', _) -> pos_rul e1' e2'
     | _ -> pos_rul e1' (enot e2) end
-  | _ -> Negative(e1, e2) 
+  | _ -> (false, e1, e2) 
 ;;
 
 let rec format e = match e with 
@@ -88,7 +91,7 @@ let rec fv_from_name s expr = match expr with
   | Enot (e, _) -> (fv_from_name s e)
   | Eand(e1, e2, _) | Eor(e1, e2, _) | Eimply(e1, e2, _) | Eequiv(e1, e2, _) -> 
     let a = fv_from_name s e1 in if a = None then fv_from_name s e2 else a
-  | Eall(e1, e2, _) | Eex(e1, e2, _) -> fv_from_name s e2 (*TODO Fix*)
+  | Eall(e1, e2, _) | Eex(e1, e2, _) -> fv_from_name s e2 
   | _ -> None;;
 let skolem expr = 
   let rec aux vars expr = match expr with
@@ -104,17 +107,96 @@ let skolem expr =
       match v with Evar(s,_) -> aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
       | _ -> failwith "skolem_aux" end
     | e -> e in aux (List.map (fun s -> Option.get (fv_from_name s expr)) (get_fv expr)) expr;;
- 
+
+(* new assoc and mem_assoc functions
+   with the Expr.equal equality
+   replacing =
+*)
+
+let rec assoc_expr x = function
+  | [] -> raise Not_found
+  | (a,b)::l -> if (Expr.equal a x) then b else assoc_expr x l
+;;
+
+let rec mem_assoc_expr x = function
+  | [] -> false
+  | (a, b)::l -> (Expr.equal a x) || mem_assoc_expr x l
+;;
+
+let rec mem_expr x = function
+  | [] -> false
+  | a :: l -> (Expr.equal a x) || mem_expr x l
+;;  
+
+exception Unif_failed;;
+
+let rec unif_aux l e1 e2 =
+  match e1, e2 with
+    | Evar (_, _), _ ->
+      if  not(mem_assoc_expr e1 l) then (e1, e2)::l
+      else if (Expr.equal (assoc_expr e1 l) e2) then l
+      else raise Unif_failed
+
+    | Eapp (Evar (s1, _), args1, _), Eapp (Evar(s2, _), args2, _) when (s1 = s2)
+         -> (try
+	      List.fold_left2 unif_aux l args1 args2
+	     with
+	       | Invalid_argument _ -> raise Unif_failed)
+
+    | Enot (x1, _), Enot (y1, _)
+      -> unif_aux l x1 y1
+    | Eand (x1, x2, _), Eand (y1, y2, _)
+      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
+    | Eor (x1, x2, _), Eor (y1, y2, _)
+      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
+    | Eimply (x1, x2, _), Eimply (y1, y2, _)
+      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
+    | Eequiv (x1, x2, _), Eequiv (y1, y2, _)
+      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
+
+    | _, _ when (Expr.equal e1 e2) -> (e1, e2)::l
+    | _, _ -> raise Unif_failed
+;;
+
+let unif t1 t2 = unif_aux [] t1 t2;;        
+
+
+let apply_rule r = let (pol, _, _) = r in
+        let e1,e2 = match r with (true, e1, e2) | (false, e1, e2) -> e1, e2 in
+        let rec aux b e = match e with
+                | Eapp _ | Evar _ -> if pol = b then try substitute (unif e1 e) e2 with Unif_failed -> e else e
+                | Emeta _ -> e
+
+                | Earrow _ -> e
+
+                | Enot (e', _) -> enot (aux (not b) e')
+                | Eand (e1', e2', _) ->   eand (aux b e1', aux b e2')
+                | Eor (e1', e2', _) ->    eor (aux b e1', aux b e2')
+
+                | Eimply (e1', e2', _) -> eimply (aux (not b) e1', aux b e2')
+
+                | Eequiv (e1', e2', _) -> eequiv (aux b (eimply (e1', e2')), aux b (eimply (e2', e1')))
+
+                | Etrue  | Efalse -> e 
+
+                | Eall (v, e', _) ->  if equal v e1 then e else eall (v, aux b e')
+                | Eex (v, e', _) -> if equal v e1 then e else eex (v, aux b e')
+                | Etau _ -> e
+                | Elam _ -> e
+        in aux true
+;;
+
+
 let rec hyp_to_rwrt_rules hyp = match hyp with
   | Emeta (e, _) -> []
-  | Evar _  | Eapp _ -> [Positive(hyp, etrue); Negative(hyp, etrue)]
+  | Evar _  | Eapp _ -> [(true, hyp, etrue); (false, hyp, etrue)]
 
   | Earrow (args, e, _) -> []
 
   | Enot (e, _) -> (hyp_to_rwrt_rules (eimply(e, efalse)))
   | Eand (e1, e2, _) -> []
   | Eor (e1, e2, _) -> []
-  | Eimply (e1, e2, _) -> let e1, e2 = if (is_lit e1) then e1, e2 else e2, e1 in 
+  | Eimply (e1, e2, _) -> if not (is_lit e1) then (if is_lit e2 then hyp_to_rwrt_rules (eimply (enot e2, enot e1)) else []) else 
     (if is_lit e1 then [pos_rul ((skolem % format) e1)  ((skolem % format) e2)]@@[pos_rul ((skolem % format) (enot e1))  ((skolem % format) (enot e2))] else [])
   | Eequiv (e1, e2, _) -> (hyp_to_rwrt_rules (eimply(e1, e2)))@@(hyp_to_rwrt_rules (eimply(e2, e1)))
   | Etrue | Efalse -> []
@@ -125,7 +207,13 @@ let rec hyp_to_rwrt_rules hyp = match hyp with
   | Elam (e1, e2, _) -> []
   | _ -> []
 ;;
-let normalize_fm p = p;;
+let rec normalize_fm p =  
+        let rec aux = function 
+        | [] -> p
+        | t::q -> let p' = apply_rule t (aux q) in  p'
+        in let res = aux !rules in (*if not (equal p res) then begin print_string "\nForme normale de "; Print.expr (Print.Chan stdout) p; print_string " :\n"; Print.expr (Print.Chan stdout) res; end; *)res
+;;
+
 let normalize_list l = List.map normalize_fm l;;
 let add_rwrt_term a b = ();;
 let add_rwrt_prop a b = ();;
@@ -137,7 +225,7 @@ let rec select_rwrt_rules_aux accu phrase =
     -> raise (Bad_Rewrite_Rule (name, body))
   | Hyp (name, body, flag)
        when (flag = 2) || (flag = 1) (*|| (flag = 12) || (flag = 11) *)
-    ->  let rwrt = hyp_to_rwrt_rules body in 
+    ->  let rwrt = hyp_to_rwrt_rules body in rules := !rules @@ rwrt; 
       List.iter print_rule rwrt;
        phrase :: accu;
   | Def (DefRec _) ->
