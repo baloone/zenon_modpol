@@ -152,7 +152,7 @@ let rec translate_one dirs accu p =
   | Formula (name, "tff_hypothesis", body, None) ->
       Hyp ("ax_"^name, body, 11) :: accu
   | Formula (name, ("tff_hypothesis" | "tff_axiom" | "tff_definition"), body, Some r) ->
-     let r = match r with "rewrite+" -> RPositive | "rewrite-" -> RNegative | _ -> assert false in
+     let r = match r with "rewritep" -> RPositive | "rewritem" -> RNegative | _ -> assert false in
      let f = if (get_formula_type p) = "tff_hypothesis" then 11 else 12 in 
      if !Globals.modulo then Rew (name, body, f, r) :: accu
      else Hyp ("ax_"^name, body, 12) :: accu

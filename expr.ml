@@ -45,8 +45,6 @@ type definition =
   | DefRec of expr option * string * expr * expr list * expr
 ;;
 
-type rwrt_tbl = (string, expr * expr) Hashtbl.t;;
-type rwrt_tbls = rwrt_tbl * rwrt_tbl;;
 
 
 exception Higher_order;;
@@ -731,7 +729,7 @@ and type_app s args =
                 ret
             end
     | t, [] -> t
-    | _ -> assert false
+    | x,_ -> assert false
 
 and eeq a b =
     let t = get_type a in
@@ -983,6 +981,3 @@ let get_tvar e =
 
 
 type goalness = int;;
-
-let tbl_term = ref (Hashtbl.create 42);;
-let tbl_prop = ref (Hashtbl.create 42);;

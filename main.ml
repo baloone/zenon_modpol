@@ -227,10 +227,10 @@ let argspec = [
      "<ext>            activate extension <ext>";
   "-modulo", Arg.Set modulo,
      "             build the rewrite system from TPTP meta info";
-  "-modulo-heuri", Arg.Set modulo_heuri,
+(*  "-modulo-heuri", Arg.Set modulo_heuri,
      "             build the rewrite system from heuristic";
   "-modulo-heuri-simple", Arg.Set modulo_heuri_simple,
-     "             build the rewrite system from heuristic simple";
+     "             build the rewrite system from heuristic simple";*)
   "-dbg-rwrt", Arg.Set debug_rwrt,
      "             debug mode for rewriting"
 ];;
@@ -405,14 +405,14 @@ let main () =
   let retcode = ref 0 in
   begin try
     let phrases = List.map fst phrases_dep in
-    let phrases = Rewrite.select_rwrt_rules phrases in
+    let phrases = if !Globals.modulo then Rewrite.select_rwrt_rules phrases else phrases in
     let ppphrases = Extension.preprocess phrases in
     List.iter Extension.add_phrase ppphrases;
     if !Globals.debug_rwrt
     then
-      begin
+      begin(*
 	Print.print_tbl_term (Print.Chan stdout) !tbl_term;
-	Print.print_tbl_prop (Print.Chan stdout) !tbl_prop;
+	Print.print_tbl_prop (Print.Chan stdout) !tbl_prop;*)
       end;
     let (defs, hyps) = Phrase.separate (Extension.predef ()) ppphrases in
     List.iter (fun (fm, _) -> Eqrel.analyse fm) hyps;

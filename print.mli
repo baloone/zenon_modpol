@@ -33,6 +33,7 @@ val dots : output -> ?full_output:bool -> ?max_depth:int -> Mlproof.proof list -
 
 val pr_def : Buffer.t -> Expr.definition -> unit;;
 
-val print_tbl_term : output -> Expr.rwrt_tbl -> unit;;
-val print_tbl_prop : output -> Expr.rwrt_tbl -> unit;;
-
+(*
+val print_tbl_term : output -> Rewrite.rwrt_tbl -> unit;;
+val print_tbl_prop : output -> Rewrite.rwrt_tbl -> unit;;
+*)

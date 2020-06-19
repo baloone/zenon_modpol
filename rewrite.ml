@@ -4,745 +4,155 @@ Version.add "$Id$";;
 
 
 open Expr;;
-open Print;;
-open Node;;
-open Mlproof;;
 open Phrase;;
 
 
-let printer e = expr_soft (Chan stdout) e;;
-
-let rec find_first_sym t =
-  match t with
- (*   | Evar (sym, _) -> sym *)
-    | Eapp (Evar(sym, _), _, _) -> sym
-    | Enot (t1, _) -> find_first_sym t1
-    | _ -> ""
-;;
-
-(* new assoc and mem_assoc functions
-   with the Expr.equal equality
-   replacing =
-*)
-
-let rec assoc_expr x = function
-  | [] -> raise Not_found
-  | (a,b)::l -> if (Expr.equal a x) then b else assoc_expr x l
-;;
-
-let rec mem_assoc_expr x = function
-  | [] -> false
-  | (a, b)::l -> (Expr.equal a x) || mem_assoc_expr x l
-;;
-
-let rec mem_expr x = function
-  | [] -> false
-  | a :: l -> (Expr.equal a x) || mem_expr x l
-;;
-
-exception Unif_failed;;
-
-let rec unif_aux l e1 e2 =
-  match e1, e2 with
-    | Evar (_, _), _ ->
-      if  not(mem_assoc_expr e1 l) then (e1, e2)::l
-      else if (Expr.equal (assoc_expr e1 l) e2) then l
-      else raise Unif_failed
-
-    | Eapp (f1, args1, _), Eapp (f2, args2, _) when (Expr.equal f1 f2)
-         -> (try
-	      List.fold_left2 unif_aux l args1 args2
-	     with
-	       | Invalid_argument _ -> raise Unif_failed)
-
-    | Enot (x1, _), Enot (y1, _)
-      -> unif_aux l x1 y1
-    | Eand (x1, x2, _), Eand (y1, y2, _)
-      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
-    | Eor (x1, x2, _), Eor (y1, y2, _)
-      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
-    | Eimply (x1, x2, _), Eimply (y1, y2, _)
-      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
-    | Eequiv (x1, x2, _), Eequiv (y1, y2, _)
-      -> List.fold_left2 unif_aux l [x1;x2] [y1;y2]
-
-    | _, _ when (Expr.equal e1 e2) -> (e1, e2)::l
-    | _, _ -> raise Unif_failed
-;;
-
-let unif t1 t2 = unif_aux [] t1 t2;;
-
-let rec unif_st_aux l e1 e2 =
-  match e2 with
-  | Evar _ -> l
-  | Eapp (v, args, _) ->
-     let l' =
-       begin
-         try unif_aux l e1 e2
-         with
-         | Unif_failed -> l
-       end
-     in
-     List.fold_left (fun x y -> unif_st_aux x e1 y) l' args
-  | _ -> l
-;;
-
-let unif_st e1 e2 =
-  match e1 with
-  | Eapp _ -> unif_st_aux [] e1 e2
-  | _ -> assert false
-;;
-
-let rec unif_sf_aux l e1 e2 =
-  match e2 with
-  | Eapp _ ->
-     begin
-       try unif_aux l e1 e2
-       with
-       | Unif_failed -> l
-     end
-  | Enot (e, _) ->
-     unif_sf_aux l e1 e
-  | Eand (e, e', _) ->
-     List.fold_left (fun x y -> unif_sf_aux x e1 y) l [e; e']
-  | Eor (e, e', _) ->
-     List.fold_left (fun x y -> unif_sf_aux x e1 y) l [e; e']
-  | Eimply (e, e', _) ->
-     List.fold_left (fun x y -> unif_sf_aux x e1 y) l [e; e']
-  | Eequiv (e, e', _) ->
-     List.fold_left (fun x y -> unif_sf_aux x e1 y) l [e; e']
-  | Eall (_, e, _) ->
-     unif_sf_aux l e1 e
-  | Eex (_, e, _) ->
-     unif_sf_aux l e1 e
-  | _ -> l
-;;
-
-let unif_sf e1 e2 =
-  match e1 with
-  | Eapp _ -> unif_sf_aux [] e1 e2
-  | _ -> assert false
-;;
-
-let not_unif_subform e1 e2 =
-  Log.debug 1 " | not unif subform %a ~ %a"
-            Print.pp_expr e1
-            Print.pp_expr e2;
-  let l = unif_sf e1 e2 in
-  match l with
-  | [] ->
-     Log.debug 1 " | true";
-     true
-  | _ ->
-     begin
-       Log.debug 1 " | false";
-       List.iter
-         (fun (x, y) -> Log.debug 1 " |     %a ~ %a"
-                                  Print.pp_expr x Print.pp_expr y)
-         l;
-       false
-     end
-;;
-
-let not_unif_subterm e1 e2 =
-  Log.debug 1 " | not unif subterm %a ~ %a"
-            Print.pp_expr e1
-            Print.pp_expr e2;
-  let l = unif_st e1 e2 in
-  match l with
-  | [] ->
-     Log.debug 1 " | true";
-     true
-  | _ ->
-     Log.debug 1 " | false";
-     false
-;;
-
-let rec find_best_match incr left_rule fm =
-  match left_rule, fm with
-  | Evar _ , Evar _
-    -> let new_incr = incr + 1 in
-       new_incr
-  | Eapp (Evar(sym1, _), args1, _), Eapp (Evar(sym2, _), args2, _)
-       when sym1 = sym2 && List.length args1 = List.length args2
-    -> let new_incr = incr + 3 in
-       List.fold_left2 find_best_match new_incr args1 args2
-  | Eapp _, _
-    -> let new_incr = incr - 1 in
-       new_incr
-  | _, _ -> incr
-;;
-
-let ordering_two fm (l1, r1) (l2, r2) =
-  match fm with
-  | Enot (r_fm, _)
-    ->
-     begin
-       if find_best_match 0 l1 r_fm = find_best_match 0 l2 r_fm
-       then 0
-       else if find_best_match 0 l1 r_fm < find_best_match 0 l2 r_fm
-       then 1
-       else -1
-     end
-  | _  ->
-     begin
-       if find_best_match 0 l1 fm = find_best_match 0 l2 fm
-       then 0
-       else if find_best_match 0 l1 fm < find_best_match 0 l2 fm
-       then 1
-       else -1
-     end
-;;
-
- let ordering (l1, r1) (l2, r2) =
-  let fv_l1 = get_fv l1 in
-  let fv_l2 = get_fv l2 in
-  if List.length fv_l1 = List.length fv_l2 then 0
-  else if List.length fv_l1 > List.length fv_l2 then 1
-  else -1
-;;
-
-let rec rewrite_prop (l, r) p =
-  try
-    let subst = unif l p in
-    Expr.substitute subst r
-  with
-  | Unif_failed ->
-    (match p with
-      | Enot (p2, _) ->
-	enot (rewrite_prop (l, r) p2)
-      | _ -> p)
-;;
-
-let rec norm_prop_aux rules fm =
-  match rules with
-    | [] -> fm
-    | (l, r) :: tl ->
-      begin
-	let new_fm = rewrite_prop (l, r) fm in
-	if (Expr.equal fm new_fm)
-	then norm_prop_aux tl fm
-	else
-	  begin
-            Log.debug 1 "rewrite prop";
-            Log.debug 1 "## %a --> %a" Print.pp_expr fm
-                      Print.pp_expr new_fm;
-	    new_fm
-	  end
-      end
-;;
-
-let norm_prop fm =
-  let rules = Hashtbl.find_all !Expr.tbl_prop (find_first_sym fm) in
-  (*let rules = List.sort (ordering_two fm) rules in*)
-  norm_prop_aux rules fm
-;;
-
-let rec rewrite_term (l, r) p =
-  try
-    let subst = unif l p in
-    Expr.substitute subst r
-  with
-  | Unif_failed -> p
-;;
-
-let rec norm_term_aux rules t =
-  match rules with
-    | [] -> t
-    | (l, r) :: tl ->
-      norm_term_aux tl (rewrite_term (l, r) t)
-;;
-
-let rec norm_term t =
-  let rules = Hashtbl.find_all !Expr.tbl_term (find_first_sym t) in
-  let new_t = norm_term_aux rules t in
-  if not (Expr.equal t new_t)
-  then
-    begin
-      Log.debug 1 "rewrite term";
-      Log.debug 1 "## %a --> %a" Print.pp_expr t Print.pp_expr new_t;
-      norm_term new_t
-    end
-  else
-    begin
-      match t with
-      | Eapp (f, args, _) ->
-	eapp (f, (List.map norm_term args))
-      | Enot (t1, _) ->
-	enot (norm_term t1)
-      | Eand (t1, t2, _) ->
-	eand (norm_term t1, norm_term t2)
-      | Eor (t1, t2, _) ->
-	eor (norm_term t1, norm_term t2)
-      | Eimply (t1, t2, _) ->
-	eimply (norm_term t1, norm_term t2)
-      | Eequiv (t1, t2, _) ->
-	eequiv (norm_term t1, norm_term t2)
-
-      | _ -> t
-    end
-;;
-
-let is_literal fm =
-  match fm with
-  | Eapp(Evar _, _, _) -> true
-  | Enot(Eapp(Evar _, _, _), _) -> true
-  | _ -> false
-;;
-
-let rec normalize_fm fm =
-  if is_literal fm then
-    begin
-      let fm_t = norm_term fm in
-      let fm_p = norm_prop fm_t in
-      if (Expr.equal fm_p fm)
-      then fm
-      else
-        begin
-          Log.debug 2 "norm fm";
-          Log.debug 2 "# %a --> %a" Print.pp_expr fm Print.pp_expr fm_p;
-          normalize_fm fm_p
-        end
-    end
-  else
-    fm
-;;
-
-let rec normalize_list_aux accu list =
-  match list with
-  | [] -> List.rev accu
-  | h :: t ->
-    let accu = (normalize_fm h) :: accu in
-    normalize_list_aux accu t
-;;
-
-let normalize_list list =
-  normalize_list_aux [] list
-;;
-
-
-(* heuristic *)
-
-let is_commut_term body =
-  match body with
-  | Eapp (Evar("=", _), [t1; t2], _) ->
-     begin
-      match t1, t2 with
-      | Eapp (Evar(sym1, _), [e11; e12], _), Eapp (Evar(sym2, _), [e21; e22], _)
-	  when
-	    (sym1 = sym2)
-	    && (Expr.equal e11 e22)
-	    && (Expr.equal e12 e21)
-	    -> true
-      | _ -> false
-    end
-
-  | _ -> false
-;;
-
-let is_assoc_term body =
-  match body with
-  | Eapp (Evar("=", _), [t1; t2], _) ->
-    begin
-      match t1, t2 with
-      | Eapp (Evar(sym11, _), [e11; Eapp (Evar(sym12, _), [e12; e13], _)], _),
-        Eapp (Evar(sym21, _), [Eapp (Evar(sym22, _), [e21; e22], _); e23], _)
-	  when
-	    (sym11 = sym12)
-	    && (sym12 = sym21)
-	    && (sym21 = sym22)
-	    && (Expr.equal e11 e21)
-	    && (Expr.equal e12 e22)
-	    && (Expr.equal e13 e23)
-	    -> true
-      | Eapp (Evar(sym11, _), [Eapp (Evar(sym12, _), [e11; e12], _); e13], _),
-	Eapp (Evar(sym21, _), [e21; Eapp (Evar(sym22, _), [e22; e23], _)], _)
-	  when
-	    (sym11 = sym12)
-	    && (sym12 = sym21)
-	    && (sym21 = sym22)
-	    && (Expr.equal e11 e21)
-	    && (Expr.equal e12 e22)
-	    && (Expr.equal e13 e23)
-	    -> true
-      | _ -> false
-    end
-  | _ -> false
-;;
-
-let rec test_fv l1 l2 =
-  match l2 with
-  | [] -> true
-  | h :: tl when List.mem h l1 -> test_fv l1 tl
-  | _ -> false
-;;
-
-let is_pos_literal_noteq body =
-  match body with
-  | Eapp(Evar(sym, _), _, _) when (sym <> "=") -> true
-  | _ -> false
-;;
-
-let is_neg_literal_noteq body =
-  match body with
-  | Enot(Eapp(Evar(sym, _), _, _), _) when (sym <> "=")-> true
-  | _ -> false
-;;
-
-let is_literal_noteq body =
-  match body with
-  | Eapp(Evar(sym, _), _, _) when (sym <> "=") -> true
-  | Enot(Eapp(Evar(sym, _), _, _), _) when (sym <> "=")-> true
-  | _ -> false
-;;
-
-let is_literal_eq body =
-  match body with
-  | Eapp(Evar(sym, _), _, _)  -> true
-  | Enot(Eapp(Evar(sym, _), _, _), _)  -> true
-  | _ -> false
-;;
-
-let rec is_equal_term body =
-  match body with
-  | Eapp (Evar("=", _), [t1; t2], _)
-      when not (is_commut_term body) ->
-     begin
-       match t1, t2 with
-       | Eapp _, _ -> test_fv (get_fv t1) (get_fv t2)
-       | _, Eapp _ -> test_fv (get_fv t2) (get_fv t1)
-       | _, _ -> false
-     end
-  | _ -> false
-;;
-
-(*let rec is_conj_term body =
-  match body with
-  | Eand (e1, e2, _) -> is_conj_term e1 && is_conj_term e2
-  | _ -> is_equal_term body
-;;*)
-
-let is_empty_list l =
-  match l with
-  | [] -> true
-  | _ -> false
-;;
-
-let rec is_sym_subexpr s e =
-  match e with
-  | Evar(s', _) ->
-     s = s'
-  | Emeta _ ->
-     false
-  | Eapp(Evar(s', _), args, _) ->
-     (s' = s) || (List.exists (is_sym_subexpr s) args)
-  | Earrow _ ->
-     false
-  | Enot(e, _) ->
-     is_sym_subexpr s e
-  | Eand(e, e', _) ->
-     (is_sym_subexpr s e) || (is_sym_subexpr s e')
-  | Eor(e, e', _) ->
-     (is_sym_subexpr s e) || (is_sym_subexpr s e')
-  | Eimply(e, e', _) ->
-     (is_sym_subexpr s e) || (is_sym_subexpr s e')
-  | Eequiv(e, e', _) ->
-     (is_sym_subexpr s e) || (is_sym_subexpr s e')
-  | Etrue ->
-     false
-  | Efalse ->
-     false
-  | Eall(_, e, _) ->
-     is_sym_subexpr s e
-  | Eex (_, e, _) ->
-     is_sym_subexpr s e
-  | Etau _ ->
-     false
-  | Elam _ ->
-     false
-  | _ -> assert false
-;;
-
-let is_good_rwrt_term_aux body =
-  match body with
-  | Eapp (Evar ("=", _), [t1; t2], _)
-       when not (is_commut_term body)
-            && not (Expr.equal t1 t2) ->
-     begin
-       match t1, t2 with
-       | Eapp _, _ ->
-          test_fv (get_fv t1) (get_fv t2)
-       (*&& not (is_empty_list (get_fv t1))*)
-       | _, _ -> false
-     end
-  | _ -> false
-;;
-
-let rec is_good_rwrt_term body =
-  match body with
-  | Eall (_, pred, _) -> is_good_rwrt_term pred
-  | _ -> is_good_rwrt_term_aux body
-;;
-
-let rec is_good_rwrt_prop_aux body =
-  if is_literal_noteq body
-  then true
-  else
-    begin
-      match body with
-      | Eequiv (e1, e2, _) ->
-	 is_literal_noteq e1
-	 && test_fv (get_fv e1) (get_fv e2)
-      (* && not (is_empty_list (get_fv e1))*)
-      | _ -> false
-    end
-;;
-
-let rec is_good_rwrt_prop body =
-  match body with
-  | Eall (_, pred, _) -> is_good_rwrt_prop pred
-  | _ -> is_good_rwrt_prop_aux body
-;;
-
-let is_heuri_rwrt_term_aux body =
-  match body with
-  | Eapp (Evar ("=", _), [t1; t2], _) ->
-     begin
-       match t1, t2 with
-       | Eapp _, _ ->
-          test_fv (get_fv t1) (get_fv t2)
-          && not_unif_subterm t1 t2
-          && not (is_empty_list (get_fv t1))
-       | _, _ -> false
-     end
-  | _ -> false
-;;
-
-let rec is_heuri_rwrt_term body =
-  Log.debug 1 " | is_heuri Ax : %a" Print.pp_expr body;
-  match body with
-  | Eall (_, pred, _) -> is_heuri_rwrt_term pred
-  | _ -> is_heuri_rwrt_term_aux body
-;;
-
-let rec is_heuri_rwrt_prop_aux body =
-  if (is_literal_noteq body)
-     && not (is_empty_list (get_fv body))
-  then true
-  else
-    begin
-      match body with
-      | Eequiv (e1, e2, _) ->
-	 is_pos_literal_noteq e1
-         && not_unif_subform e1 e2
-         && test_fv (get_fv e1) (get_fv e2)
-         && not (is_empty_list (get_fv e1))
-      | _ -> false
-    end
-;;
-
-let rec is_heuri_rwrt_prop body =
-  Log.debug 1 " | is_heuri Ax : %a" Print.pp_expr body;
-  match body with
-  | Eall (_, pred, _) -> is_heuri_rwrt_prop pred
-  | _ -> is_heuri_rwrt_prop_aux body
-;;
-
-
-let is_heuri_rwrt_term2_aux body =
-  match body with
-  | Eapp (Evar ("=", _), [t1; t2], _)
-       when not (is_commut_term body)
-            && not (Expr.equal t1 t2) ->
-     begin
-       match t1, t2 with
-       | Eapp _, _ ->
-          test_fv (get_fv t1) (get_fv t2)
-          && not (is_empty_list (get_fv t1))
-       | _, _ -> false
-     end
-  | _ -> false
-;;
-
-let rec is_heuri_rwrt_term2 body =
-  match body with
-  | Eall (_, pred, _) -> is_heuri_rwrt_term2 pred
-  | _ -> is_heuri_rwrt_term2_aux body
-;;
-
-let rec is_heuri_rwrt_prop2_aux body =
-  if (is_literal_noteq body)
-     && not (is_empty_list (get_fv body))
-  then true
-  else
-    begin
-      match body with
-      | Eequiv (e1, e2, _) ->
-	 is_literal_noteq e1
-         && test_fv (get_fv e1) (get_fv e2)
-         && not (is_empty_list (get_fv e1))
-      | _ -> false
-    end
-;;
-
-let rec is_heuri_rwrt_prop2 body =
-  match body with
-  | Eall (_, pred, _) -> is_heuri_rwrt_prop2 pred
-  | _ -> is_heuri_rwrt_prop2_aux body
-;;
-
-let split_to_prop_rule body =
-  let parse_equiv body =
-    match body with
-    | Eequiv (expr1, expr2, _)
-	 when is_pos_literal_noteq expr1
-	      && test_fv (get_fv expr1) (get_fv expr2)
-      -> (expr1, expr2)
-    | Eequiv (expr1, expr2, _)
-	 when is_neg_literal_noteq expr1
-	      && test_fv (get_fv expr1) (get_fv expr2)
-      -> begin
-         match expr1 with
-         | Enot(Eapp _ as new_e1, _)
-           -> (new_e1, enot(expr2))
-         | _ -> assert false
-       end
-    | Eapp (Evar(sym, _), _, _) as expr
-	 when sym <> "="
-      -> (expr, etrue)
-    | Enot (Eapp (Evar(sym, _), _, _) as expr, _)
-	 when sym <> "="
-      -> (expr, efalse)
-    | _ -> assert false
-  in
-  let rec parse body =
-    match body with
-    | Eall (_, expr, _) -> parse expr
-    | _ -> parse_equiv body
-  in
-  parse body
-;;
-
-let split_to_term_rule body =
-  let parse_equal body =
-    match body with
-    | Eapp (Evar(sym, _), [expr1; expr2], _)
-	 when sym = "="
-      ->
-       begin
-	 match expr1, expr2 with
-	 | Eapp _, _ when test_fv (get_fv expr1) (get_fv expr2)
-	   -> (expr1, expr2)
-	 | _, Eapp _ when test_fv (get_fv expr2) (get_fv expr1)
-	   -> (expr2, expr1)
-	 | _, _ -> assert false
-       end
-    | _ -> assert false
-  in
-  let rec parse body =
-    match body with
-    | Eall (_, expr, _) -> parse expr
-    | _ -> parse_equal body
-  in
-  parse body
-;;
-
-let add_rwrt_term name body  =
-  let (x, y) = split_to_term_rule body in
-  Log.debug 4 "+ rwrt_term %s: %a --> %a" name
-            Print.pp_expr x
-            Print.pp_expr y;
-  Hashtbl.add !Expr.tbl_term (find_first_sym x) (x, y)
-;;
-
-let add_rwrt_prop name body =
-  let (x, y) = split_to_prop_rule body in
-  Log.debug 4 "+ rwrt_prop %s: %a --> %a" name
-            Print.pp_expr x
-            Print.pp_expr y;
-  Hashtbl.add !Expr.tbl_prop (find_first_sym x) (x, y)
-;;
-
-let get_rwrt_from_def = function
-  | DefReal (name, id, ty, args, body, _) ->
-     (name, eeq (eapp (tvar id ty, args)) body)
-  | DefPseudo (_, id, ty, args, body) ->
-     ("pseudoDef_"^id, eeq (eapp (tvar id ty, args)) body)
-  | DefRec _ -> assert false   (* This case has been filtered out in select_rwrt_rules_aux *)
-;;
-
+type rwrt_tbl = (string, expr * expr) Hashtbl.t;;
+type rwrt_tbls = rwrt_tbl * rwrt_tbl;;
+let tbl_term = ref (Hashtbl.create 42);;
+let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
+
+type rwrt_rule = Positive of expr * expr | Negative of expr * expr;;
+let pexp = Print.expr_soft (Print.Chan stdout);;
+let print_rule r = let sign = match r with Positive _ -> "+" | _ -> "-" in
+  match r with Positive(e1, e2) | Negative(e1, e2) -> 
+    print_endline "Rewrite rule :"; pexp e1; print_string (" --->"^sign^" "); pexp e2; print_endline ""
+;;
+
+let rec ( @@ ) l = function 
+  | [] -> l
+  | t::q -> let q' = (l@@q) in if List.mem t q' then q' else t::q'
+;;
+let ( % ) f g = fun x -> f (g x);;
+let rec is_lit = function
+  | Evar _ | Eapp (Evar _, _, _) -> true
+  | Enot (e, _) -> is_lit e 
+  | _ -> false;;
+
+let rec pos_rul e1 e2 = match e1 with 
+  | Enot(e1', _) -> begin match e2 with 
+    | Enot(e2', _) -> neg_rul e1' e2'
+    | _ -> neg_rul e1' (enot e2) end
+  | _ -> Positive(e1, e2) 
+and neg_rul e1 e2 = match e1 with 
+  | Enot(e1', _) -> begin match e2 with 
+    | Enot(e2', _) -> pos_rul e1' e2'
+    | _ -> pos_rul e1' (enot e2) end
+  | _ -> Negative(e1, e2) 
+;;
+
+let rec format e = match e with 
+  | Evar _ | Eapp _ -> e
+  | Enot(e', _) -> begin match e' with 
+    | Enot (e'', _) -> format e''
+    | Evar _ | Eapp _ -> e
+    | Eand (e1, e2, _) -> eor (format (enot e1), format (enot e2))
+    | Eor (e1, e2, _) -> eand (format (enot e1), format (enot e2))
+    | Eall (e1, e2, _) -> eex (e1, format (enot e2))
+    | Eex (e1, e2, _) -> eall (e1, format (enot e2))
+    | _ -> e
+    end
+  | Eand (e1, e2, _) -> eand (format e1, format e2)
+  | Eor (e1, e2, _) -> eor (format e1, format e2)
+  | Eimply (e1, e2, _) -> eimply (format e1, format e2)
+  | Eequiv (e1, e2, _) -> eequiv(format e1, format e2)
+
+
+  | Eall (e1, e2, _) -> eall(e1, format e2)
+  | Eex (e1, e2, _) -> eex(e1, format e2)
+  | _ -> e
+;;
+let rec replace_var s r expr = 
+  if not (List.mem s (get_fv expr)) then expr else
+  match expr with
+  | Evar (s', _) -> if s = s' then r else expr 
+  | Emeta (e, _) -> emeta (replace_var s r e)
+  | Eapp (e, args, _) -> eapp(e, List.map (replace_var s r) args)
+  | Enot (e, _) -> enot(replace_var s r e)
+  | Eand(e1, e2, _) -> eand(replace_var s r e1, replace_var s r e2)
+  | Eor(e1, e2, _) -> eor(replace_var s r e1, replace_var s r e2)
+  | Eimply(e1, e2, _) -> eimply(replace_var s r e1, replace_var s r e2)
+  | Eequiv(e1, e2, _) -> eequiv(replace_var s r e1, replace_var s r e2)
+  | Eall(Evar (s', _), _, _) | Eex(Evar (s', _), _, _) when s' = s -> expr
+  | Eall(e1, e2, _) -> eall(e1, replace_var s r e2) 
+  | Eex(e1, e2, _) -> eex(e1, replace_var s r e2)
+  | _ -> expr
+;;
+let rec fv_from_name s expr = match expr with
+  | Emeta (e, _) -> fv_from_name s e
+  | Evar (s', _) -> if s = s' then Some expr else None
+  | Eapp (e1, args, _) -> let rec aux = function
+    | [] -> None | t::q -> let f = fv_from_name s t in if f = None then aux q else f in  aux (e1::args)
+  | Enot (e, _) -> (fv_from_name s e)
+  | Eand(e1, e2, _) | Eor(e1, e2, _) | Eimply(e1, e2, _) | Eequiv(e1, e2, _) -> 
+    let a = fv_from_name s e1 in if a = None then fv_from_name s e2 else a
+  | Eall(e1, e2, _) | Eex(e1, e2, _) -> fv_from_name s e2 (*TODO Fix*)
+  | _ -> None;;
+let skolem expr = 
+  let rec aux vars expr = match expr with
+    | Emeta (e, _) -> emeta (aux vars e)
+    | Evar _  | Eapp _ -> expr
+    | Enot (e, _) -> enot(aux vars e)
+    | Eand(e1, e2, _) -> eand(aux vars e1, aux vars e2)
+    | Eor(e1, e2, _) -> eor(aux vars e1, aux vars e2)
+    | Eimply(e1, e2, _) -> eimply(aux vars e1, aux vars e2)
+    | Eequiv(e1, e2, _) -> eequiv(aux vars e1, aux vars e2)
+    | Eall(e1, e2, _) -> aux (e1::vars) e2 
+    | Eex(v, e2, _) -> let t = earrow(List.map get_type vars) (get_type v) in begin 
+      match v with Evar(s,_) -> aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
+      | _ -> failwith "skolem_aux" end
+    | e -> e in aux (List.map (fun s -> Option.get (fv_from_name s expr)) (get_fv expr)) expr;;
+ 
+let rec hyp_to_rwrt_rules hyp = match hyp with
+  | Emeta (e, _) -> []
+  | Evar _  | Eapp _ -> [Positive(hyp, etrue); Negative(hyp, etrue)]
+
+  | Earrow (args, e, _) -> []
+
+  | Enot (e, _) -> (hyp_to_rwrt_rules (eimply(e, efalse)))
+  | Eand (e1, e2, _) -> []
+  | Eor (e1, e2, _) -> []
+  | Eimply (e1, e2, _) -> let e1, e2 = if (is_lit e1) then e1, e2 else e2, e1 in 
+    (if is_lit e1 then [pos_rul ((skolem % format) e1)  ((skolem % format) e2)]@@[pos_rul ((skolem % format) (enot e1))  ((skolem % format) (enot e2))] else [])
+  | Eequiv (e1, e2, _) -> (hyp_to_rwrt_rules (eimply(e1, e2)))@@(hyp_to_rwrt_rules (eimply(e2, e1)))
+  | Etrue | Efalse -> []
+
+  | Eall (e1, e2, _) -> hyp_to_rwrt_rules e2
+  | Eex (e1, e2, _) -> []
+  | Etau (e1, e2, _) -> []
+  | Elam (e1, e2, _) -> []
+  | _ -> []
+;;
+let normalize_fm p = p;;
+let normalize_list l = List.map normalize_fm l;;
+let add_rwrt_term a b = ();;
+let add_rwrt_prop a b = ();;
+
 let rec select_rwrt_rules_aux accu phrase =
-  (*match phrase with
-  | Rew (name, body, flag)
+  match phrase with
+  | Rew (name, body, flag, sign)
        when (flag = 2) || (flag = 1)
-    ->
-     assert !Globals.modulo;
-     if is_good_rwrt_prop body
-     then
-       begin
-         Log.debug 1 "|- adding rewrite prop %s: %a" name Print.pp_expr body;
-         add_rwrt_prop name body;
-         Rew (name, body, 1) :: accu
-       end
-     else if is_good_rwrt_term body
-     then
-       begin
-         Log.debug 1 "|- adding rewrite term %s: %a" name Print.pp_expr body;
-         add_rwrt_term name body;
-         Rew (name, body, 0) :: accu
-       end
-     else raise (Bad_Rewrite_Rule (name, body))
+    -> raise (Bad_Rewrite_Rule (name, body))
   | Hyp (name, body, flag)
        when (flag = 2) || (flag = 1) (*|| (flag = 12) || (flag = 11) *)
-    ->
-     if !Globals.modulo_heuri_simple
-	&& is_heuri_rwrt_prop2 body
-     then
-       begin
-         Log.debug 1 "|- adding rewrite prop %s: %a" name Print.pp_expr body;
-         add_rwrt_prop name body;
-         Rew (name, body, 1) :: accu
-       end
-     else if !Globals.modulo_heuri_simple
-             && is_heuri_rwrt_term2 body
-     then
-       begin
-         Log.debug 1 "|- adding rewrite term %s: %a" name Print.pp_expr body;
-         add_rwrt_term name body;
-         Rew (name, body, 0) :: accu
-       end
-     else if !Globals.modulo_heuri
-	     && is_heuri_rwrt_prop body
-     then
-       begin
-         Log.debug 1 "|- adding rewrite prop %s: %a" name Print.pp_expr body;
-         add_rwrt_prop name body;
-         Rew (name, body, 1) :: accu
-       end
-     else if !Globals.modulo_heuri
-             && is_heuri_rwrt_term body
-     then
-       begin
-         Log.debug 1 "|- adding rewrite term %s: %a" name Print.pp_expr body;
-         add_rwrt_term name body;
-         Rew (name, body, 0) :: accu
-       end
-     else phrase :: accu;
+    ->  let rwrt = hyp_to_rwrt_rules body in 
+      List.iter print_rule rwrt;
+       phrase :: accu;
   | Def (DefRec _) ->
      (* Recursive definitions are not turned into rewrite-rules (yet) *)
      phrase :: accu
   | Def d ->
-     let (name, body) = get_rwrt_from_def d in
-     add_rwrt_term name body;
+     (*let (name, body) = get_rwrt_from_def d in
+     add_rwrt_term name body;*)
      phrase :: accu
-  | _ -> phrase :: accu*) ()
+  |  _ -> phrase :: accu
 ;;
 
 let select_rwrt_rules phrases =
   Log.debug 1 "====================";
   Log.debug 1 "Select Rewrite Rules";
-  phrases
-  (*List.rev (List.fold_left select_rwrt_rules_aux [] phrases)*)
+  (*List.iter (Print.phrase (Print.Chan stdout)) phrases; *)
+  List.rev (List.fold_left select_rwrt_rules_aux [] phrases)
 ;;

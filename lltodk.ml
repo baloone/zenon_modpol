@@ -1025,9 +1025,9 @@ let output oc phrases llp =
   (* create dk variables of type prf of an hypothese *)
   let dkctx = mk_prf_var_def phrases in
   (* make list of rewrite rules *)
-  let rules = Hashtbl.fold (fun x y z -> y :: z) !tbl_term [] in
+  let rules = Hashtbl.fold (fun x y z -> y :: z) !Rewrite.tbl_term [] in
   let rules = List.append rules
-			  (Hashtbl.fold (fun x y z -> y :: z) !tbl_prop []) in
+			  (Hashtbl.fold (fun x y z -> y :: z) !Rewrite.tbl_prop []) in
   let dkrules = List.map build_dkrwrt rules in
   let (name, goal) = List.split (select_goal phrases) in
   let dkgoal = trexpr_dkgoal goal in
