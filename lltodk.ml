@@ -265,13 +265,11 @@ let tr_list_vars rule =
 
 (* translate rewrite rules
  *)
-let build_dkrwrt rule =
-  match rule with
-  | (l, r) ->
-     let vars = tr_list_vars rule in
-     let t1 = translate_expr l in
-     let t2 = translate_expr r in
-     mk_rwrt (vars, t1, t2)
+let build_dkrwrt (pol, l, r) = (*TODO: add polarization*)
+   let vars = tr_list_vars  (l, r)  in
+   let t1 = translate_expr l in
+   let t2 = translate_expr r in
+   mk_rwrt (vars, t1, t2)
 ;;
 
 let select_goal_aux accu phrase =
@@ -1025,7 +1023,7 @@ let output oc phrases llp =
   (* create dk variables of type prf of an hypothese *)
   let dkctx = mk_prf_var_def phrases in
   (* make list of rewrite rules *)
-  let rules = Hashtbl.fold (fun x y z -> y :: z) !Rewrite.tbl_term [] in
+  let rules = Hashtbl.fold (fun x (e1, e2) z -> (true, e1, e2) :: z) !Rewrite.tbl_term [] in (*TODO*)
   let rules = List.append rules
 			  (Hashtbl.fold (fun x y z -> y :: z) !Rewrite.tbl_prop []) in
   let dkrules = List.map build_dkrwrt rules in

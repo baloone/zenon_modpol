@@ -309,7 +309,7 @@ let phrase opts l (p, b) =
      (Phrase.Def (definition opts d), b) :: l
   | Phrase.Rew (s, e, i) ->
      let typed_equality = check_expr opts [] type_prop e in
-     Rewrite.add_rwrt_term s typed_equality;
+     (*Rewrite.add_rwrt_term s typed_equality;*)
      (Phrase.Rew (s, typed_equality, i), b) :: l
   | _ -> (p, b) :: l                  (* TODO *)
 ;;
