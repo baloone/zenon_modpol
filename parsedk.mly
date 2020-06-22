@@ -252,9 +252,8 @@ hyp_def:
              | decl :: env -> eall (decl, aux env)
            in
            let e = aux $1 in
-           failwith "not implemented"
-           (*[ (* Phrase.Hyp ("rew", e, 1); *)
-             Phrase.Rew ("rew", e, 0) ]*)
+           [ (* Phrase.Hyp ("rew", e, 1); *)
+             Phrase.Rew ("rew", e, 0) ]
          }
 
 compact_args:

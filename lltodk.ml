@@ -974,7 +974,7 @@ let rec get_sigs_phrases_aux accu phrases =
   | Phrase.Hyp (_, fm, _) :: tl ->
      let accu = get_sigs_fm accu fm in
      get_sigs_phrases_aux accu tl
-  | Phrase.Rew (_, fm, _, _) :: tl ->
+  | Phrase.Rew (_, fm, _) :: tl ->
      let accu = get_sigs_fm accu fm in
      get_sigs_phrases_aux accu tl
   | Phrase.Def (DefReal (_, _, _, _, body, _)) :: tl ->

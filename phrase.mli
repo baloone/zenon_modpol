@@ -8,16 +8,13 @@ type inductive_arg =
   | Self
 ;;
 
-type rewrite_sign = RPositive | RNegative;;
-val rsign_to_string : rewrite_sign -> string
-
 type phrase =
   | Hyp of string * expr * int
   | Def of definition
   | Sig of string * string list * string  (* sym, args, result *)
   | Inductive of
      string * string list * (string * inductive_arg list) list * string
-  | Rew of string * expr * int * rewrite_sign
+  | Rew of string * expr * int
 ;;
 
 type zphrase =

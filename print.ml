@@ -219,8 +219,7 @@ let phrase o ph =
       pro "$sig %s (" sym;
       List.iter (fun x -> pro " %s" x) args;
       pro ") %s\n" res;
-  | Phrase.Rew (n, e, p, s) -> 
-    pro ("# %s-->%s:\n$%d ") n (Phrase.rsign_to_string s) p; expr o e; pro "\n";
+  | Phrase.Rew (n, e, p) -> pro "# %s:\n$%d " n p; expr o e; pro "\n";
   | Phrase.Inductive _ -> assert false (* FIXME *)
   end;
   flush ();
