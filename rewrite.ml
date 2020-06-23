@@ -25,7 +25,7 @@ let tbl_term = ref (Hashtbl.create 42);;
 let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
-let pexp = Print.expr (Print.Chan stdout);;
+let pexp = Print.expr_soft (Print.Chan stdout);;
 let print_pol_rule (r, e1, e2) = let sign = if r then "+" else "-" in
     pexp e1; print_string (" --->"^sign^" "); pexp e2; print_newline (); flush stdout;
 ;;
@@ -35,20 +35,30 @@ let print_rule (e1, e2) =
 
 let rules = ref [];;
 
+let rec get_hash = function
+  | Eapp (Evar(sym, _), args, _) -> sym^(String.concat "" (List.map get_hash args))
+  | Enot (t1, _) -> get_hash t1
+  | _ -> ""
+;;
+
 let rec is_lit = function
   | Evar _ | Eapp (Evar _, _, _) -> true
   | Enot (e, _) -> is_lit e 
   | _ -> false
 ;;
 
+exception ApplyRule;;
+
 let rec apply_rule (pol, r1, r2) e = 
+  print_string ("apply_rule "^(get_hash r1)^": "); pexp r1; print_string "   -->   "; pexp r2; print_string " on: "; pexp e; print_newline();
   let rec aux b acc e1 e2 = match e1, e2 with
     | _, Enot(e2', _) -> aux (not b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
       List.fold_left2 (aux b) acc args args'
-    | Evar _, _ -> if b=pol then (e1, e2)::acc else assert false
-    | _ -> assert false
-  in try (if pol then (fun x -> x) else enot) (substitute (aux true [] r1 e) r2) with _ -> e
+    | Evar _, _ -> if b=pol then (e1, e2)::acc else raise ApplyRule
+    | _ -> raise ApplyRule
+  in try (if pol then (fun x -> x) else enot) (substitute (aux true [] r1 e) r2)
+    with ApplyRule -> pexp e; e
 ;;
 
 
@@ -60,12 +70,6 @@ let get_rwrt_term = let rec aux vars = function
     if (fv1 <<? fv2) && (fv2 <<? vars) && (not_cyclic t1 t2) then Some (t1, t2) else None
   | Eall(Evar(s,_), e, _) -> aux (s::vars) e
   | _ -> None in aux []
-;;
-
-let rec find_first_sym = function
-  | Eapp (Evar(sym, _), _, _) -> sym
-  | Enot (t1, _) -> find_first_sym t1
-  | _ -> ""
 ;;
 
 let rec pos_rul e1 e2 = match e1 with 
@@ -187,7 +191,7 @@ let rec norm_term_aux rules t =
 
 let rec norm_term t =
   try
-  let rules = Hashtbl.find_all !tbl_term (find_first_sym t) in
+  let rules = Hashtbl.find_all !tbl_term (get_hash t) in
   let new_t = norm_term_aux rules t in
   if not (Expr.equal t new_t)
   then
@@ -217,22 +221,31 @@ let rec norm_term t =
   with _ -> pexp t; failwith "incredible"
 
 ;;
+let rec profondeur = function
+    | Eall (_, e, _) | Eex (_, e, _)  | Enot (e, _) -> 1 + profondeur e
+    | Eand (e1, e2, _) | Eor (e1, e2, _) | Eimply (e1, e2, _) | Eequiv (e1, e2, _) -> 1 + max (profondeur e1) (profondeur e2)
+    | _ -> 0;;
+  
+let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur b) - (profondeur a));;
+
 let rec normalize_fm p =
         if not (is_lit p) then  p else let p = norm_term p in
+        let rules = (Hashtbl.find_all !tbl_prop (get_hash p)) in 
         let rec aux = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux q else p'
-        in let res = aux (Hashtbl.find_all !tbl_prop (find_first_sym p)) in if not (equal res p) then (print_newline();pexp p; print_string "====>"; pexp res; print_newline()); res
+        in let res = (aux % rsort) rules in (*List.iter (fun r -> print_string ((get_hash p)^": "); print_pol_rule r) rules;*)
+        if equal res p then p else normalize_fm res
 ;;
 
 let normalize_list l = List.map normalize_fm l;;
 let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
 let add_rwrt_prop s e = let rules = (exp_to_rules e) in
-  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (find_first_sym e1) (pol, e1, e2)) rules
+  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules
 ;;
 let _add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2); true | None -> false;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
-  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (find_first_sym e1) (pol, e1, e2)) rules; List.length rules > 0
+  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules; List.length rules > 0
 ;;
 let rec select_rwrt_rules_aux accu phrase =
   match phrase with
