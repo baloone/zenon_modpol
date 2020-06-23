@@ -7,6 +7,16 @@ open Expr;;
 open Phrase;;
 
 
+let rec ( @@ ) l = function 
+  | [] -> l
+  | t::q -> let q' = (l@@q) in if List.mem t q' then q' else t::q'
+;;
+
+let ( % ) f g = fun x -> f (g x);;
+
+let rec ( <<? ) l l' = match l with [] -> true | t::q -> (List.mem t l') && (q <<? l');;
+
+
 type rule = expr * expr;;
 type pol_rule = bool * expr * expr;;
 type tbl = (string, rule) Hashtbl.t;;
@@ -15,20 +25,15 @@ let tbl_term = ref (Hashtbl.create 42);;
 let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
-let pexp e= Print.expr (Print.Chan stdout)e;print_newline ();;
-let print_rule r = let sign = match r with b,_,_ -> if b then "+" else "-" in
-  match r with (_, e1, e2) -> 
-    print_endline "Rewrite rule :"; pexp e1; print_string (" --->"^sign^" "); pexp e2; print_endline ""
+let pexp = Print.expr (Print.Chan stdout);;
+let print_pol_rule (r, e1, e2) = let sign = if r then "+" else "-" in
+    pexp e1; print_string (" --->"^sign^" "); pexp e2; print_newline (); flush stdout;
+;;
+let print_rule (e1, e2) = 
+    pexp e1; print_string (" ---> "); pexp e2; print_newline (); flush stdout;
 ;;
 
 let rules = ref [];;
-
-let rec ( @@ ) l = function 
-  | [] -> l
-  | t::q -> let q' = (l@@q) in if List.mem t q' then q' else t::q'
-;;
-let ( % ) f g = fun x -> f (g x);;
-let rec ( <<? ) l l' = match l with [] -> true | t::q -> (List.mem t l') && (q <<? l');;
 
 let rec is_lit = function
   | Evar _ | Eapp (Evar _, _, _) -> true
@@ -36,7 +41,18 @@ let rec is_lit = function
   | _ -> false
 ;;
 
-let not_cyclic t1 t2 = true (*TODO*)
+let rec apply_rule (pol, r1, r2) e = 
+  let rec aux b acc e1 e2 = match e1, e2 with
+    | _, Enot(e2', _) -> aux (not b) acc e1 e2'
+    | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
+      List.fold_left2 (aux b) acc args args'
+    | Evar _, _ -> if b=pol then (e1, e2)::acc else assert false
+    | _ -> assert false
+  in try (if pol then (fun x -> x) else enot) (substitute (aux true [] r1 e) r2) with _ -> e
+;;
+
+
+let not_cyclic t1 t2 = not (equal (apply_rule (true, t1, t2) t2) t2)
 let get_rwrt_term = let rec aux vars = function
   | Eapp (Evar ("=", _), [t1; t2], _) -> 
     let fv1, fv2 = get_fv t1, get_fv t2 in
@@ -47,10 +63,9 @@ let get_rwrt_term = let rec aux vars = function
 ;;
 
 let rec find_first_sym = function
-  | Evar (sym, _) -> sym
   | Eapp (Evar(sym, _), _, _) -> sym
   | Enot (t1, _) -> find_first_sym t1
-  | _ -> assert false
+  | _ -> ""
 ;;
 
 let rec pos_rul e1 e2 = match e1 with 
@@ -139,18 +154,12 @@ let get_rwrt_from_def = function
 ;;
 
 
-let apply_rule (pol, e1, e2) = 
-  let rec aux b e = match e with
-    | Eapp (v, args, _)  -> let s = get_name v in let rules = List.filter (fun (p, _, _) -> p = pol) (Hashtbl.find_all !tbl_prop s) in e
-    | _ -> e
-  in aux true
-;;
 
 let format = skolem % nnf;;
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
-  | Evar _  | Eapp _ -> [(true, ex, etrue)]
+  | Evar _  | Eapp _ -> [(true, ex, etrue); (false, ex, etrue)]
 
   | Earrow (args, e, _) -> []
 
@@ -158,8 +167,8 @@ let rec exp_to_rules ex = match ex with
   | Eand (e1, e2, _) -> []
   | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
-    (if is_lit e1 then [pos_rul (format e1) (format e2)] else []) @@
-      (if is_lit e2 then [pos_rul (format (enot e2))  (format (enot e1))] else [])
+    (if is_lit e1 then [pos_rul e1 (format e2)] else []) @@
+      (if is_lit e2 then [pos_rul (enot e2)  (format (enot e1))] else [])
   | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2)))@@(exp_to_rules (eimply(e2, e1)))
   | Etrue | Efalse -> []
 
@@ -168,27 +177,71 @@ let rec exp_to_rules ex = match ex with
   | Etau (e1, e2, _) -> []
   | Elam (e1, e2, _) -> []
 ;;
-let rec normalize_fm p =  
+
+let rec norm_term_aux rules t =
+  match rules with
+    | [] -> t
+    | (l, r) :: tl ->
+      norm_term_aux tl (apply_rule (true, l, r) t)
+;;
+
+let rec norm_term t =
+  try
+  let rules = Hashtbl.find_all !tbl_term (find_first_sym t) in
+  let new_t = norm_term_aux rules t in
+  if not (Expr.equal t new_t)
+  then
+    begin
+      Log.debug 1 "rewrite term";
+      Log.debug 1 "## %a --> %a" Print.pp_expr t Print.pp_expr new_t;
+      norm_term new_t
+    end
+  else
+    begin
+      match t with
+      | Eapp (f, args, _) ->
+	eapp (f, (List.map norm_term args))
+      | Enot (t1, _) ->
+	enot (norm_term t1)
+      | Eand (t1, t2, _) ->
+	eand (norm_term t1, norm_term t2)
+      | Eor (t1, t2, _) ->
+	eor (norm_term t1, norm_term t2)
+      | Eimply (t1, t2, _) ->
+	eimply (norm_term t1, norm_term t2)
+      | Eequiv (t1, t2, _) ->
+	eequiv (norm_term t1, norm_term t2)
+
+      | _ -> t
+    end
+  with _ -> pexp t; failwith "incredible"
+
+;;
+let rec normalize_fm p =
+        if not (is_lit p) then  p else let p = norm_term p in
         let rec aux = function 
         | [] -> p
-        | t::q -> let p' = apply_rule t (aux q) in  p'
-        in let res = aux !rules in (*if not (equal p res) then begin print_string "\nForme normale de "; Print.expr (Print.Chan stdout) p; print_string " :\n"; Print.expr (Print.Chan stdout) res; end; *)res
+        | t::q -> let p' = apply_rule t p in  if equal p p' then aux q else p'
+        in let res = aux (Hashtbl.find_all !tbl_prop (find_first_sym p)) in if not (equal res p) then (print_newline();pexp p; print_string "====>"; pexp res; print_newline()); res
 ;;
 
 let normalize_list l = List.map normalize_fm l;;
-let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> print_endline "rwrt_term:"; pexp e1; print_string " --> "; pexp e2; Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
-let add_rwrt_prop s e = let rules = (exp_to_rules e) in 
-  List.iter (fun r -> Hashtbl.add !tbl_prop s r) rules; List.iter print_rule rules
+let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
+let add_rwrt_prop s e = let rules = (exp_to_rules e) in
+  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (find_first_sym e1) (pol, e1, e2)) rules
 ;;
-
+let _add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2); true | None -> false;;
+let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
+  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (find_first_sym e1) (pol, e1, e2)) rules; List.length rules > 0
+;;
 let rec select_rwrt_rules_aux accu phrase =
   match phrase with
   | Rew (name, body, flag)
        when (flag = 2) || (flag = 1)
     -> add_rwrt_term name body; add_rwrt_prop name body; phrase :: accu
   | Hyp (name, body, flag)
-       when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) 
-    -> add_rwrt_term name body; add_rwrt_prop name body; Rew (name, body, 0) :: accu
+       (*when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) *)
+    -> let b = _add_rwrt_term name body in let b' = _add_rwrt_prop name body in if (b||b') then Rew(name, body, if b then 0 else 1) :: accu else phrase::accu
   | Def (DefRec _) ->
      (* Recursive definitions are not turned into rewrite-rules (yet) *)
      phrase :: accu
@@ -202,5 +255,10 @@ let rec select_rwrt_rules_aux accu phrase =
 let select_rwrt_rules phrases =
   Log.debug 1 "====================";
   Log.debug 1 "Select Rewrite Rules";
-  List.rev (List.fold_left select_rwrt_rules_aux [] phrases)
+  let res = List.rev (List.fold_left select_rwrt_rules_aux [] phrases) in 
+  print_endline "term rwrt rules:";
+  Hashtbl.iter (fun s -> print_string (s^": "); print_rule) !tbl_term;
+  print_endline "prop rwrt rules:";
+  Hashtbl.iter (fun s -> print_string (s^": "); print_pol_rule) !tbl_prop;
+  res
 ;;
