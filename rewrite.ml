@@ -55,7 +55,7 @@ let rec lit_pol = function
 
 let rec fv_from_name s expr = match expr with
   | Emeta (e, _) -> fv_from_name s e
-  | Evar (s', _) -> if s = s' then Some expr else None
+  | Evar (s', _) -> if s = s' (*&& get_type expr <> type_type*) then Some expr else None
   | Eapp (e1, args, _) -> let rec aux = function
     | [] -> None | t::q -> let f = fv_from_name s t in if f = None then aux q else f in  aux (e1::args)
   | Enot (e, _) -> (fv_from_name s e)
@@ -164,10 +164,10 @@ let skolem expr =
     | Eimply(e1, e2, _) -> expr
     | Eequiv(e1, e2, _) -> expr
     | Eall(e1, e2, _) -> eall (e1, aux (e1::vars) e2) 
-    | Eex(v, e2, _) -> let t = earrow(List.map get_type vars) (get_type v) in begin 
+    | Eex(v, e2, _) -> let t = type_none in (*earrow(List.map get_type vars) (get_type v) in *)begin 
       match v with Evar(s,_) -> aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
       | _ -> failwith "skolem_aux" end
-    | e -> e in aux (List.map (fun s -> Option.get (fv_from_name s expr)) (get_fv expr)) expr
+    | e -> e in aux (List.filter_map (fun s -> fv_from_name s expr) (get_fv expr)) expr
 ;;
 
 let get_rwrt_from_def = function
@@ -180,7 +180,7 @@ let get_rwrt_from_def = function
 
 
 
-let format = (*skolem % *)nnf;;
+let format = skolem % nnf;;
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
@@ -249,18 +249,23 @@ let rec profondeur = function
   
 let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur b) - (profondeur a));;
 let i = ref 0;;
+
+let applicable p =
+        List.filter (fun (pol, _, _) -> pol = lit_pol p)(Hashtbl.find_all !tbl_prop (get_hash p));;
+
 let rec normalize_fm p =
         if not (is_lit p) then  p else let p = norm_term p in
-        i := !i + 1; if !i mod 1000 = 0 then (print_newline();print_int (!i/1000);print_endline "K");
-        let rules = List.filter (fun (pol, _, _) -> pol = lit_pol p)(Hashtbl.find_all !tbl_prop (get_hash p)) in 
-        let rec aux = function 
+        let rules = applicable p in 
+        let rec aux p = function 
         | [] -> p
-        | t::q -> let p' = apply_rule t p in  if equal p p' then aux q else p'
-        in let res = (aux % rsort) rules in 
-        if equal res p then p else normalize_fm res
+        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (print_pol_rule t;p')
+        in let res = aux p (rsort rules) in 
+        if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
 ;;
 
-let normalize_list l = List.map (fun x -> let p = normalize_fm x in if not(equal x p) then print_rule(x, p); p) l;;
+let normalize_list l = 
+        i := !i + 1; if !i mod 1000 = 0 then (print_newline();print_int (!i/1000);print_endline "K");
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then print_rule(x, p); p) l;;
 let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
 let add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules
