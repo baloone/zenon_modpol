@@ -136,6 +136,32 @@ let rec nnf e = match e with
   | Eex (e1, e2, _) -> eex(e1, nnf e2)
   | _ -> e
 ;;
+
+let rec miniscoping expr = let mini = miniscoping in
+    let pall v e = if List.mem (get_name v) (get_fv e) then eall(v,e) else e in
+    let pex v e = if List.mem (get_name v) (get_fv e) then eex(v,e) else e in
+    let auxQ e a b = (function
+            | Eand _ -> eand
+            | Eor _ -> eor
+            | Eall _ -> fun (x, y) -> pall x y
+            | Eex _ -> fun (x, y) -> pex x y
+            | _ -> assert false) e (a,b)
+    in
+    match expr with 
+    | Emeta _  | Evar _  | Eapp _ | Enot _ -> expr
+    | Eand(e1, e2, _) -> eand(mini e1, mini e2)
+    | Eor(e1, e2, _) -> eor(mini e1, mini e2)
+    | Eex(e1, Eor(e1', e2', _), _) -> eor(pex (mini e1) (mini e1'), pex (mini e1) (mini e2'))
+    | Eall(e1, Eand(e1', e2', _), _) -> eand(pall (mini e1) (mini e1'), pall (mini e1) (mini e2'))
+    | Eall(e1, e2, _) | Eex(e1, e2, _) -> let q = auxQ expr in (
+            match e2 with 
+                | Eand (e1', e2', _) | Eor (e1', e2', _) -> 
+                        let o = auxQ e2 in let n = [get_name e1] in
+                        o (mini (q e1 e1')) (mini (q e1 e2'))
+                | _ -> q e1 (mini e2)
+    )
+    | e -> e
+;;
 let rec replace_var s r expr = 
   if not (List.mem s (get_fv expr)) then expr else
   match expr with
@@ -164,9 +190,10 @@ let skolem expr =
     | Eimply(e1, e2, _) -> expr
     | Eequiv(e1, e2, _) -> expr
     | Eall(e1, e2, _) -> eall (e1, aux (e1::vars) e2) 
-    | Eex(v, e2, _) -> let t = type_none in (*earrow(List.map get_type vars) (get_type v) in *)begin 
-      match v with Evar(s,_) -> aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
-      | _ -> failwith "skolem_aux" end
+    | Eex(v, e2, _) -> 
+      let t = type_none (*in earrow(List.map get_type vars) (get_type v)*) in
+      let s = get_name v in 
+      aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
     | e -> e in aux (List.filter_map (fun s -> fv_from_name s expr) (get_fv expr)) expr
 ;;
 
@@ -180,7 +207,7 @@ let get_rwrt_from_def = function
 
 
 
-let format = skolem % nnf;;
+let format = skolem % miniscoping % nnf;;
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
@@ -248,7 +275,6 @@ let rec profondeur = function
     | _ -> 0;;
   
 let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur b) - (profondeur a));;
-let i = ref 0;;
 
 let applicable p =
         List.filter (fun (pol, _, _) -> pol = lit_pol p)(Hashtbl.find_all !tbl_prop (get_hash p));;
@@ -264,7 +290,6 @@ let rec normalize_fm p =
 ;;
 
 let normalize_list l = 
-        i := !i + 1; if !i mod 1000 = 0 then (print_newline();print_int (!i/1000);print_endline "K");
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then print_rule(x, p); p) l;;
 let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
 let add_rwrt_prop s e = let rules = (exp_to_rules e) in
