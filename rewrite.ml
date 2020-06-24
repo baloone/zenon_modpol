@@ -26,14 +26,12 @@ let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
 let pexp = Print.expr_soft (Print.Chan stdout);;
-let debug_pol_rule (r, e1, e2) = let sign = if r then "+" else "-" in
-        Log.debug 1 "%a -->%s %a\n" Print.pp_expr e1 sign Print.pp_expr e2; 
-    (*pexp e1; print_string (" --->"^sign^" "); pexp e2; print_newline (); flush stdout;
-*);;
-let debug_rule (e1, e2) =
-        Log.debug 1 "%a --> %a\n" Print.pp_expr e1 Print.pp_expr e2; 
-    (*pexp e1; print_string (" ---> "); pexp e2; print_newline (); flush stdout;
-*);;
+let debug_pol_rule ?(i=1) (r, e1, e2) = let sign = if r then "+" else "-" in
+        Log.debug i "%a -->%s %a\n" Print.pp_expr e1 sign Print.pp_expr e2; 
+;;
+let debug_rule ?(i=1) (e1, e2) =
+        Log.debug i "%a --> %a\n" Print.pp_expr e1 Print.pp_expr e2; 
+;;
 
 let rules = ref [];;
 
@@ -158,7 +156,7 @@ let rec miniscoping expr = let mini = miniscoping in
     | Eall(e1, e2, _) | Eex(e1, e2, _) -> let q = auxQ expr in (
             match e2 with 
                 | Eand (e1', e2', _) | Eor (e1', e2', _) -> 
-                        let o = auxQ e2 in let n = [get_name e1] in
+                        let o = auxQ e2 in
                         o (mini (q e1 e1')) (mini (q e1 e2'))
                 | _ -> q e1 (mini e2)
     )
@@ -204,7 +202,7 @@ let get_rwrt_from_def = function
      (name, eeq (eapp (tvar id ty, args)) body)
   | DefPseudo (_, id, ty, args, body) ->
      ("pseudoDef_"^id, eeq (eapp (tvar id ty, args)) body)
-  | DefRec _ -> assert false   (* This case has been filtered out in select_rwrt_rules_aux *)
+  | DefRec _ -> assert false   (* This case has been filtered out in add_phrase *)
 ;;
 
 
@@ -277,22 +275,22 @@ let rec profondeur = function
     | _ -> 0;;
   
 let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur b) - (profondeur a));;
-
+let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
 let applicable p =
         List.filter (fun (pol, _, _) -> pol = lit_pol p)(Hashtbl.find_all !tbl_prop (get_hash p));;
 
 let rec normalize_fm p =
         if not (is_lit p) then  p else let p = norm_term p in
-        let rules = applicable p in 
+        let rules = (rsort % applicable) p in 
         let rec aux p = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (debug_pol_rule t;p')
-        in let res = aux p (rsort rules) in 
+        in let res = aux p rules in 
         if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
 ;;
 
 let normalize_list l = 
-        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule(x, p); p) l;;
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule ~i:2 (x, p); p) l;;
 let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
 let add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules
@@ -328,9 +326,9 @@ let select_rwrt_rules phrases =
   Log.debug 1 "Select Rewrite Rules";
   let res = List.map add_phrase phrases in 
   Log.debug 1 "--------------term rwrt rules:";
-  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_rule) !tbl_term;
+  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_rule ~i:1) !tbl_term;
   Log.debug 1 "--------------prop rwrt rules:";
-  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_pol_rule) !tbl_prop;
+  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_pol_rule ~i:1) !tbl_prop;
   Log.debug 1 "\n====================";
   res
 ;;
