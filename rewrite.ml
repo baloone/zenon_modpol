@@ -26,12 +26,14 @@ let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
 let pexp = Print.expr_soft (Print.Chan stdout);;
-let print_pol_rule (r, e1, e2) = let sign = if r then "+" else "-" in
-    pexp e1; print_string (" --->"^sign^" "); pexp e2; print_newline (); flush stdout;
-;;
-let print_rule (e1, e2) = 
-    pexp e1; print_string (" ---> "); pexp e2; print_newline (); flush stdout;
-;;
+let debug_pol_rule (r, e1, e2) = let sign = if r then "+" else "-" in
+        Log.debug 1 "%a -->%s %a\n" Print.pp_expr e1 sign Print.pp_expr e2; 
+    (*pexp e1; print_string (" --->"^sign^" "); pexp e2; print_newline (); flush stdout;
+*);;
+let debug_rule (e1, e2) =
+        Log.debug 1 "%a --> %a\n" Print.pp_expr e1 Print.pp_expr e2; 
+    (*pexp e1; print_string (" ---> "); pexp e2; print_newline (); flush stdout;
+*);;
 
 let rules = ref [];;
 
@@ -87,7 +89,7 @@ let rec apply_rule (pol, r1, r2) e =
   try let map = f_map (aux true [] r1 e) in
   (if pol then (fun x -> x) else enot) (try 
     substitute map r2
-  with _ -> print_rule (e, r2); raise (Ill_typed_substitution map))
+  with _ -> debug_rule (e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e
 
 ;;
@@ -284,13 +286,13 @@ let rec normalize_fm p =
         let rules = applicable p in 
         let rec aux p = function 
         | [] -> p
-        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (print_pol_rule t;p')
+        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (debug_pol_rule t;p')
         in let res = aux p (rsort rules) in 
         if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
 ;;
 
 let normalize_list l = 
-        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then print_rule(x, p); p) l;;
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule(x, p); p) l;;
 let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
 let add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules
@@ -299,32 +301,36 @@ let _add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules; List.length rules > 0
 ;;
-let rec select_rwrt_rules_aux accu phrase =
+let rec add_phrase phrase =
   match phrase with
   | Rew (name, body, flag)
        when (flag = 2) || (flag = 1)
-    -> add_rwrt_term name body; add_rwrt_prop name body; phrase :: accu
+    -> add_rwrt_term name body; add_rwrt_prop name body; phrase
   | Hyp (name, body, flag)
        (*when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) *)
-    -> let b = _add_rwrt_term name body in let b' = _add_rwrt_prop name body in if (b||b') then Rew(name, body, if b then 0 else 1) :: accu else phrase::accu
+    -> if (!Globals.modulo_heuri) then 
+            let b = _add_rwrt_term name body in
+            let b' = _add_rwrt_prop name body in
+            (if (b||b') then Rew(name, body, if b then 0 else 1)  else phrase)
+        else phrase
   | Def (DefRec _) ->
      (* Recursive definitions are not turned into rewrite-rules (yet) *)
-     phrase :: accu
+     phrase 
   | Def d ->
      let (name, body) = get_rwrt_from_def d in
      add_rwrt_term name body;
-     phrase :: accu
-  |  _ -> phrase :: accu
+     phrase
+  |  _ -> phrase
 ;;
 
 let select_rwrt_rules phrases =
   Log.debug 1 "====================";
   Log.debug 1 "Select Rewrite Rules";
-  let res = List.rev (List.fold_left select_rwrt_rules_aux [] phrases) in 
-  print_endline "--------------term rwrt rules:";
-  Hashtbl.iter (fun s -> print_string (s^": "); print_rule) !tbl_term;
-  print_endline "--------------prop rwrt rules:";
-  Hashtbl.iter (fun s -> print_string (s^": "); print_pol_rule) !tbl_prop;
-  print_endline "\n--------------";
+  let res = List.map add_phrase phrases in 
+  Log.debug 1 "--------------term rwrt rules:";
+  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_rule) !tbl_term;
+  Log.debug 1 "--------------prop rwrt rules:";
+  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_pol_rule) !tbl_prop;
+  Log.debug 1 "\n====================";
   res
 ;;
