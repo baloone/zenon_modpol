@@ -36,7 +36,7 @@ let print_rule (e1, e2) =
 let rules = ref [];;
 
 let rec get_hash = function
-  | Eapp (Evar(sym, _), args, _) -> sym^(String.concat "" (List.map get_hash args))
+  | Eapp (Evar(sym, _), args, _) -> sym
   | Enot (t1, _) -> get_hash t1
   | _ -> ""
 ;;
@@ -47,18 +47,43 @@ let rec is_lit = function
   | _ -> false
 ;;
 
+let rec fv_from_name s expr = match expr with
+  | Emeta (e, _) -> fv_from_name s e
+  | Evar (s', _) -> if s = s' then Some expr else None
+  | Eapp (e1, args, _) -> let rec aux = function
+    | [] -> None | t::q -> let f = fv_from_name s t in if f = None then aux q else f in  aux (e1::args)
+  | Enot (e, _) -> (fv_from_name s e)
+  | Eand(e1, e2, _) | Eor(e1, e2, _) | Eimply(e1, e2, _) | Eequiv(e1, e2, _) -> 
+    let a = fv_from_name s e1 in if a = None then fv_from_name s e2 else a
+  | Eall(e1, e2, _) | Eex(e1, e2, _) -> fv_from_name s e2 
+  | _ -> None
+;;
+
 exception ApplyRule;;
 
 let rec apply_rule (pol, r1, r2) e = 
+  
   print_string ("apply_rule "^(get_hash r1)^": "); pexp r1; print_string "   -->   "; pexp r2; print_string " on: "; pexp e; print_newline();
   let rec aux b acc e1 e2 = match e1, e2 with
     | _, Enot(e2', _) -> aux (not b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
       List.fold_left2 (aux b) acc args args'
-    | Evar _, _ -> if b=pol then (e1, e2)::acc else raise ApplyRule
+    | Evar _, _ -> if b=pol then (
+      if List.mem_assq e1 acc then (
+        if not (equal (List.assq e1 acc) e2) then raise ApplyRule else acc
+        ) else (e1, e2)::acc) else raise ApplyRule
     | _ -> raise ApplyRule
-  in try (if pol then (fun x -> x) else enot) (substitute (aux true [] r1 e) r2)
-    with ApplyRule -> pexp e; e
+  in let f_map map = let types, vars = List.partition (fun (x,_) -> get_type x = type_type) map in
+    (*let type_subst = substitute types in*)
+    (*List.iter (print_newline % (fun (x,y) -> pexp x; print_string ">"; pexp y;)) types;*)
+    (*let s, args = List.fold_left (fun (a,acc) (t,_) -> eall(t, a), t::acc) (r2,[]) types in *)
+    (*substitute_safe (List.map (fun (x,y) -> (type_subst x, type_subst y)) vars) (type_subst e)*)
+    types@@vars
+  in 
+  try let map = f_map (aux true [] r1 e) in
+  (if pol then (fun x -> x) else enot) (try substitute map r2 with _ -> raise (Ill_typed_substitution map))
+    with ApplyRule -> e
+
 ;;
 
 
@@ -122,17 +147,7 @@ let rec replace_var s r expr =
   | _ -> expr
 ;;
 
-let rec fv_from_name s expr = match expr with
-  | Emeta (e, _) -> fv_from_name s e
-  | Evar (s', _) -> if s = s' then Some expr else None
-  | Eapp (e1, args, _) -> let rec aux = function
-    | [] -> None | t::q -> let f = fv_from_name s t in if f = None then aux q else f in  aux (e1::args)
-  | Enot (e, _) -> (fv_from_name s e)
-  | Eand(e1, e2, _) | Eor(e1, e2, _) | Eimply(e1, e2, _) | Eequiv(e1, e2, _) -> 
-    let a = fv_from_name s e1 in if a = None then fv_from_name s e2 else a
-  | Eall(e1, e2, _) | Eex(e1, e2, _) -> fv_from_name s e2 
-  | _ -> None
-;;
+
 
 let skolem expr = 
   let rec aux vars expr = match expr with
@@ -140,9 +155,9 @@ let skolem expr =
     | Enot (e, _) -> enot(aux vars e)
     | Eand(e1, e2, _) -> eand(aux vars e1, aux vars e2)
     | Eor(e1, e2, _) -> eor(aux vars e1, aux vars e2)
-    | Eimply(e1, e2, _) -> eimply(aux vars e1, aux vars e2)
-    | Eequiv(e1, e2, _) -> eequiv(aux vars e1, aux vars e2)
-    | Eall(e1, e2, _) -> aux (e1::vars) e2 
+    | Eimply(e1, e2, _) -> expr
+    | Eequiv(e1, e2, _) -> expr
+    | Eall(e1, e2, _) -> eall (e1, aux (e1::vars) e2) 
     | Eex(v, e2, _) -> let t = earrow(List.map get_type vars) (get_type v) in begin 
       match v with Evar(s,_) -> aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
       | _ -> failwith "skolem_aux" end
@@ -171,8 +186,8 @@ let rec exp_to_rules ex = match ex with
   | Eand (e1, e2, _) -> []
   | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
-    (if is_lit e1 then [pos_rul e1 (format e2)] else []) @@
-      (if is_lit e2 then [pos_rul (enot e2)  (format (enot e1))] else [])
+    (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [pos_rul e1 (format e2)] else []) @@
+      (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [pos_rul (enot e2)  (format (enot e1))] else [])
   | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2)))@@(exp_to_rules (eimply(e2, e1)))
   | Etrue | Efalse -> []
 
@@ -269,9 +284,10 @@ let select_rwrt_rules phrases =
   Log.debug 1 "====================";
   Log.debug 1 "Select Rewrite Rules";
   let res = List.rev (List.fold_left select_rwrt_rules_aux [] phrases) in 
-  print_endline "term rwrt rules:";
+  print_endline "--------------term rwrt rules:";
   Hashtbl.iter (fun s -> print_string (s^": "); print_rule) !tbl_term;
-  print_endline "prop rwrt rules:";
+  print_endline "--------------prop rwrt rules:";
   Hashtbl.iter (fun s -> print_string (s^": "); print_pol_rule) !tbl_prop;
+  print_endline "\n--------------";
   res
 ;;
