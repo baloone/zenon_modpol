@@ -42,9 +42,15 @@ let rec get_hash = function
 ;;
 
 let rec is_lit = function
-  | Evar _ | Eapp (Evar _, _, _) -> true
+  | Evar _ | Eapp _ -> true
   | Enot (e, _) -> is_lit e 
   | _ -> false
+;;
+
+let rec lit_pol = function
+  | Evar _ | Eapp _ -> true
+  | Enot(e, _) -> not (lit_pol e)
+  | _ -> assert false
 ;;
 
 let rec fv_from_name s expr = match expr with
@@ -61,9 +67,7 @@ let rec fv_from_name s expr = match expr with
 
 exception ApplyRule;;
 
-let rec apply_rule (pol, r1, r2) e = 
-  
-  print_string ("apply_rule "^(get_hash r1)^": "); pexp r1; print_string "   -->   "; pexp r2; print_string " on: "; pexp e; print_newline();
+let rec apply_rule (pol, r1, r2) e =   
   let rec aux b acc e1 e2 = match e1, e2 with
     | _, Enot(e2', _) -> aux (not b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
@@ -81,7 +85,9 @@ let rec apply_rule (pol, r1, r2) e =
     types@@vars
   in 
   try let map = f_map (aux true [] r1 e) in
-  (if pol then (fun x -> x) else enot) (try substitute map r2 with _ -> raise (Ill_typed_substitution map))
+  (if pol then (fun x -> x) else enot) (try 
+    substitute map r2
+  with _ -> print_rule (e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e
 
 ;;
@@ -174,7 +180,7 @@ let get_rwrt_from_def = function
 
 
 
-let format = skolem % nnf;;
+let format = (*skolem % *)nnf;;
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
@@ -197,17 +203,17 @@ let rec exp_to_rules ex = match ex with
   | Elam (e1, e2, _) -> []
 ;;
 
-let rec norm_term_aux rules t =
-  match rules with
-    | [] -> t
-    | (l, r) :: tl ->
-      norm_term_aux tl (apply_rule (true, l, r) t)
-;;
 
 let rec norm_term t =
+  let rec aux rules t =
+    match rules with
+      | [] -> t
+      | (l, r) :: tl ->
+        aux tl (apply_rule (true, l, r) t)
+  in
   try
   let rules = Hashtbl.find_all !tbl_term (get_hash t) in
-  let new_t = norm_term_aux rules t in
+  let new_t = aux rules t in
   if not (Expr.equal t new_t)
   then
     begin
@@ -242,18 +248,19 @@ let rec profondeur = function
     | _ -> 0;;
   
 let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur b) - (profondeur a));;
-
+let i = ref 0;;
 let rec normalize_fm p =
         if not (is_lit p) then  p else let p = norm_term p in
-        let rules = (Hashtbl.find_all !tbl_prop (get_hash p)) in 
+        i := !i + 1; if !i mod 1000 = 0 then (print_newline();print_int (!i/1000);print_endline "K");
+        let rules = List.filter (fun (pol, _, _) -> pol = lit_pol p)(Hashtbl.find_all !tbl_prop (get_hash p)) in 
         let rec aux = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux q else p'
-        in let res = (aux % rsort) rules in (*List.iter (fun r -> print_string ((get_hash p)^": "); print_pol_rule r) rules;*)
+        in let res = (aux % rsort) rules in 
         if equal res p then p else normalize_fm res
 ;;
 
-let normalize_list l = List.map normalize_fm l;;
+let normalize_list l = List.map (fun x -> let p = normalize_fm x in if not(equal x p) then print_rule(x, p); p) l;;
 let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
 let add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules
