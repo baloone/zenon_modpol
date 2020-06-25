@@ -26,20 +26,17 @@ let tbl_prop = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
 
 let pexp = Print.expr_soft (Print.Chan stdout);;
-let debug_pol_rule ?(i=1) (r, e1, e2) = let sign = if r then "+" else "-" in
-        Log.debug i "%a -->%s %a\n" Print.pp_expr e1 sign Print.pp_expr e2; 
+
+let sign pol = if pol then "+" else "-";;
+
+let debug_pol_rule ?(i=1) (r, e1, e2) = let s = sign r in
+        Log.debug i "%a -->%s %a\n" Print.pp_expr e1 s Print.pp_expr e2; 
 ;;
 let debug_rule ?(i=1) (e1, e2) =
         Log.debug i "%a --> %a\n" Print.pp_expr e1 Print.pp_expr e2; 
 ;;
 
 let rules = ref [];;
-
-let rec get_hash = function
-  | Eapp (Evar(sym, _), args, _) -> sym
-  | Enot (t1, _) -> get_hash t1
-  | _ -> ""
-;;
 
 let rec is_lit = function
   | Evar _ | Eapp _ -> true
@@ -51,6 +48,13 @@ let rec lit_pol = function
   | Evar _ | Eapp _ -> true
   | Enot(e, _) -> not (lit_pol e)
   | _ -> assert false
+;;
+
+let rec get_hash = let rec aux b = function
+  | Eapp (Evar(sym, _), args, _) -> sym(*^(sign b)*)
+  | Enot (t1, _) -> aux (not b) t1
+  | _ -> ""
+  in aux true
 ;;
 
 let rec fv_from_name s expr = match expr with
@@ -191,7 +195,8 @@ let skolem expr =
     | Eequiv(e1, e2, _) -> expr
     | Eall(e1, e2, _) -> eall (e1, aux (e1::vars) e2) 
     | Eex(v, e2, _) -> 
-      let t = type_none (*in earrow(List.map get_type vars) (get_type v)*) in
+      (*let vars = List.filter (fun x -> get_type x <> type_type) vars in*)
+      let t = earrow(List.map get_type vars) (get_type v) in
       let s = get_name v in 
       aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
     | e -> e in aux (List.filter_map (fun s -> fv_from_name s expr) (get_fv expr)) expr
@@ -274,14 +279,14 @@ let rec profondeur = function
     | Eand (e1, e2, _) | Eor (e1, e2, _) | Eimply (e1, e2, _) | Eequiv (e1, e2, _) -> 1 + max (profondeur e1) (profondeur e2)
     | _ -> 0;;
   
-let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur b) - (profondeur a));;
+let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur a) - (profondeur b));;
 let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
-let applicable p =
-        List.filter (fun (pol, _, _) -> pol = lit_pol p)(Hashtbl.find_all !tbl_prop (get_hash p));;
+let applicable p = (Hashtbl.find_all !tbl_prop (get_hash p));;
 
 let rec normalize_fm p =
         if not (is_lit p) then  p else let p = norm_term p in
         let rules = (rsort % applicable) p in 
+        List.iter (debug_pol_rule ~i:1) rules;
         let rec aux p = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (debug_pol_rule t;p')
@@ -291,14 +296,16 @@ let rec normalize_fm p =
 
 let normalize_list l = 
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule ~i:2 (x, p); p) l;;
-let add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2) | None -> ();;
-let add_rwrt_prop s e = let rules = (exp_to_rules e) in
-  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules
-;;
+
 let _add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2); true | None -> false;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules; List.length rules > 0
 ;;
+
+let add_rwrt_term s e = let _ = _add_rwrt_term s e in ();;
+let add_rwrt_prop s e = let _ = _add_rwrt_prop s e in ();;
+;;
+
 let rec add_phrase phrase =
   match phrase with
   | Rew (name, body, flag)
