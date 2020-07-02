@@ -215,10 +215,12 @@ let skolem expr =
     | Eequiv(e1, e2, _) -> expr
     | Eall(e1, e2, _) -> eall (e1, aux (e1::vars) e2) 
     | Eex(v, e2, _) -> 
-      (*let vars = List.filter (fun x -> get_type x <> type_type) vars in*)
-      let t = earrow(List.map get_type vars) (get_type v) in
+      let args, types = List.partition (fun x -> get_type x<>type_type) vars in
+      let t = earrow(List.map get_type args) (get_type v) in
+      let t = List.fold_left (fun acc x -> eall(x, acc)) t types in
+      let args = (List.rev types) @ args in 
       let s = get_name v in 
-      aux vars (replace_var s (eapp(tvar (newname()) t, vars)) e2)
+      aux vars (replace_var s (eapp(tvar (newname()) t, args)) e2)
     | e -> e in aux (List.filter_map (fun s -> fv_from_name s expr) (get_fv expr)) expr
 ;;
 
@@ -306,18 +308,25 @@ let applicable p = (Hashtbl.find_all !tbl_prop (get_hash p));;
 let rec normalize_fm p =
         if not (is_lit p) then  p else let p = norm_term p in
         let rules = (rsort % applicable) p in 
-        List.iter (debug_pol_rule ~i:1) rules;
+        (*List.iter (debug_pol_rule ~i:1) rules;*)
         let rec aux p = function 
         | [] -> p
-        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (let (_, e1, e2), i = t, (Hashtbl.find !tbl_rule_freq t) in (Hashtbl.replace !tbl_rule_freq t (i+1)) ;Log.printf "\n%d: %a --> %a\n" i Print.pp_expr e1 Print.pp_expr e2;p')
+        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q 
+        else begin let (_, e1, e2), i = t, (Hashtbl.find !tbl_rule_freq t) in
+        (Hashtbl.replace !tbl_rule_freq t (i+1));
+        debug_pol_rule t;
+        p'
+        end
         in let res = aux p rules in 
         if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
 ;;
 
 let normalize_list l = 
-        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then (); p) l;;
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (x, p); p) l;;
 
-let _add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2); true | None -> false;;
+let _add_rwrt_term s e = match get_rwrt_term e with 
+  | Some (e1, e2) when (get_fv e2) <<? (get_fv e1) -> Hashtbl.add !tbl_term s (e1, e2); true 
+  | _ -> false;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
   List.iter (fun ((pol, e1, e2) as r)  -> if not (is_lit e2 && get_hash e1 = get_hash e2) then (Hashtbl.add !tbl_rule_freq r 0;Hashtbl.add !tbl_prop (get_hash e1) r)) rules; List.length rules > 0
 ;;
