@@ -1,3 +1,4 @@
-#!/usr/bin/sh
-~/Documents/dev/zenon_modulo/zenon_modulo -modulo -modulo-heuri -itptp $@
+#!/bin/sh
+./zenon_modulo -modulo -modulo-heuri -itptp $@
+
 

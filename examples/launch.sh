@@ -1,7 +1,7 @@
-#!/usr/bin/sh
+#!/bin/sh
 FILES=(*.p)
-zenonc=znmh
-#zenonc="zenon_modulo -modulo -modulo-heuri -itptp"
+#zenonc="../znmh"
+zenonc="../zenon_modulo -modulo -modulo-heuri -itptp"
 card=${#FILES[*]}
 fails=0
 success=0

@@ -133,8 +133,8 @@ Proof. intros. unfold Qeq, Qnum, Qden. simpl. rewrite Z.opp_involutive. trivial.
 
 Ltac arith_opp :=
   repeat match goal with
-  | H : context[- (Zneg ?a # ?b)] |- _ => rewrite (arith_opp_inv (' a) b) in H
-  | |- context[- ((Zneg ?a) # ?b)] => rewrite (arith_opp_inv (' a) b)
+  | H : context[- (Zneg ?a # ?b)] |- _ => rewrite (arith_opp_inv a b) in H
+  | |- context[- ((Zneg ?a) # ?b)] => rewrite (arith_opp_inv a b)
   end.
 
 Ltac arith_switch H H' :=
