@@ -57,7 +57,7 @@ type dkterm =
 
 type line =
   | Dkdecl of var * dkterm                     (* declaration of symbols *)
-  | Dkrwrt of dkterm list * dkterm * dkterm    (* rewrite rules *)
+  | Dkrwrt of dkterm list * bool option * dkterm * dkterm    (* rewrite rules *)
 
 val get_dkvar_type      : dkterm -> dkterm
 
@@ -113,7 +113,7 @@ val mk_DkRconglr        : dkterm * dkterm * dkterm * dkterm * dkterm * dkterm * 
 val mk_DkRcongrl        : dkterm * dkterm * dkterm * dkterm * dkterm * dkterm * dkterm -> dkterm
 
 val mk_decl             : var * dkterm -> line
-val mk_rwrt             : dkterm list * dkterm * dkterm -> line
+val mk_rwrt             : dkterm list * bool option * dkterm * dkterm -> line
 
 val print_line          : out_channel -> line -> unit
 val print_goal_type     : out_channel -> string -> dkterm -> unit

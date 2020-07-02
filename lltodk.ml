@@ -269,7 +269,7 @@ let build_dkrwrt (pol, l, r) = (*TODO: add polarization*)
    let vars = tr_list_vars  (l, r)  in
    let t1 = translate_expr l in
    let t2 = translate_expr r in
-   mk_rwrt (vars, t1, t2)
+   mk_rwrt (vars, pol, t1, t2)
 ;;
 
 let select_goal_aux accu phrase =
@@ -1013,6 +1013,8 @@ let output oc phrases llp =
   Log.debug 13 " |- length Sigs = %i" (List.length sigs);
   let sigs = get_sigs_proof sigs (extract_prooftree llp) in
   Log.debug 13 " |- length Sigs = %i" (List.length sigs);
+  let prules = Hashtbl.fold (fun x y z -> y :: z) !Rewrite.tbl_prop [] in
+  let sigs = List.fold_left get_sigs_fm sigs (List.map (fun (a,b,c)-> c) prules) in
   let dksigs = translate_sigs sigs in
   let dksigs = List.map (fun (x, y) -> mk_decl (x, y)) dksigs in
   (* Resolve dependencies between declarations of symbol in dedukti
@@ -1023,10 +1025,9 @@ let output oc phrases llp =
   (* create dk variables of type prf of an hypothese *)
   let dkctx = mk_prf_var_def phrases in
   (* make list of rewrite rules *)
-  let rules = Hashtbl.fold (fun x (e1, e2) z -> (true, e1, e2) :: z) !Rewrite.tbl_term [] in (*TODO*)
-  let rules = List.append rules
-			  (Hashtbl.fold (fun x y z -> y :: z) !Rewrite.tbl_prop []) in
-  let dkrules = List.map build_dkrwrt rules in
+  let trules = Hashtbl.fold (fun x (e1, e2) z -> (Option.None, e1, e2) :: z) !Rewrite.tbl_term [] in
+  let prules = List.map (fun (pol, x, y) -> (Option.Some pol, x, y)) prules in
+  let dkrules = List.map build_dkrwrt (trules@prules) in
   let (name, goal) = List.split (select_goal phrases) in
   let dkgoal = trexpr_dkgoal goal in
   let dkname = List.hd name in

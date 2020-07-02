@@ -60,7 +60,7 @@ type dkterm =
 
 type line =
   | Dkdecl of var * dkterm                     (* declaration of symbols *)
-  | Dkrwrt of dkterm list * dkterm * dkterm    (* rewrite rules *)
+  | Dkrwrt of dkterm list * bool option * dkterm * dkterm    (* rewrite rules *)
 ;;
 
 let get_dkvar_type var =
@@ -148,7 +148,7 @@ let mk_DkRconglr       (a, p, t1, t2, pr1, pr2, pr3)  = DkRconglr (a, p, t1, t2,
 let mk_DkRcongrl       (a, p, t1, t2, pr1, pr2, pr3)  = DkRcongrl (a, p, t1, t2, pr1, pr2, pr3)
 
 let mk_decl       (v, t)       = Dkdecl (v, t)
-let mk_rwrt       (l, t1, t2)  = Dkrwrt (l, t1, t2)
+let mk_rwrt       (l, pol, t1, t2)  = Dkrwrt (l, pol, t1, t2)
 
 let rec print_dk_type o t =
   match t with
@@ -403,11 +403,11 @@ let print_line o line =
      ()
   | Dkdecl (v, t) ->
      fprintf o "def %s : %a.\n\n" v print_dk_type t
-  | Dkrwrt (_, Dkapp (s, _, _), _) when String.contains s '.' || s = "Is_true" ->
+  | Dkrwrt (_, _, Dkapp (s, _, _), _) when String.contains s '.' || s = "Is_true" ->
      ()
-  | Dkrwrt (l, t1, t2) ->
-     fprintf o "[%a]\n %a \n --> %a.\n\n"
-	     pr_list_var l print_dk_term t1 print_dk_term t2
+  | Dkrwrt (l, pol, t1, t2) -> let s = match pol with None -> "" | Some true -> "+" | _ -> "-" in
+     fprintf o "[%a]\n %a \n -->%s %a.\n\n"
+	     pr_list_var l print_dk_term t1 s print_dk_term t2
 ;;
 
 let print_goal_type o name goal =
