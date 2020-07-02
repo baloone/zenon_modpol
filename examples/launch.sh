@@ -1,12 +1,12 @@
-#!/bin/sh
+#!/bin/bash
+shopt -s nullglob
 FILES=(*.p)
 #zenonc="../znmh"
-zenonc="../zenon_modulo -modulo -modulo-heuri -itptp"
+zenonc="$(dirname "${BASH_SOURCE[0]}")/../zenon_modulo -modulo -modulo-heuri -itptp"
 card=${#FILES[*]}
 fails=0
 success=0
-timeout="30s"
-
+timeout="8s"
 
 echo "$card files to check."
  
@@ -18,7 +18,7 @@ do
 	else
 		((fails++))
 		if [[ "$1" == "-d" ]]; then
-			echo $i 
+			echo -e "\033[1K$i"
 		fi
 	fi
 	echo -ne "success: $success/$card, fails: $fails/$card\r"
