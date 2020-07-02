@@ -23,7 +23,27 @@ type tbl = (string, rule) Hashtbl.t;;
 type poltbl = (string, pol_rule) Hashtbl.t;;
 let tbl_term = ref (Hashtbl.create 42);;
 let tbl_prop = ref (Hashtbl.create 42);;
+let tbl_rule_freq = ref (Hashtbl.create 42);;
 exception Bad_Rewrite_Rule of string * expr;;
+(*
+type rules4 = Map of string * rules4 * ((expr * expr) list) option | Lis of rules4 list | Void;;
+
+let ( ||< ) a = let aux e1 e2 = match e1, e2 with
+  | Evar (s, _), _ -> (match !a with Void -> a := Map(s, Void, Some [e1, e2])
+    | Map (s', r, o) when s = s' -> let l = match o with None -> [] | Some l' -> l' in 
+      a := Map(s, r, Some ((e1, e2)::l)) 
+    | Lis l -> a:= Lis (Map(s, Void, Some [e1, e2])::l)
+    | r -> a:= Lis [Map(s, Void, Some [e1, e2]); r]
+    )
+  | Eapp (v, args, _), Eapp(v', args', _) when equal v v' ->
+    let args_map = List (List.map2 (fun x y -> let a = ref Void in) args args')
+  | _ -> failwith "rules4"
+  in aux
+;;
+let ( ||! ) a b = b;;
+let t = ref Void;;
+
+*)
 
 let pexp = Print.expr_soft (Print.Chan stdout);;
 
@@ -279,7 +299,7 @@ let rec profondeur = function
     | Eand (e1, e2, _) | Eor (e1, e2, _) | Eimply (e1, e2, _) | Eequiv (e1, e2, _) -> 1 + max (profondeur e1) (profondeur e2)
     | _ -> 0;;
   
-let rsort = List.sort (fun (_, _, a) (_, _, b) -> (profondeur a) - (profondeur b));;
+let rsort = List.sort (fun r1 r2 -> (Hashtbl.find !tbl_rule_freq r2) - (Hashtbl.find !tbl_rule_freq r1));;
 let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
 let applicable p = (Hashtbl.find_all !tbl_prop (get_hash p));;
 
@@ -289,17 +309,17 @@ let rec normalize_fm p =
         List.iter (debug_pol_rule ~i:1) rules;
         let rec aux p = function 
         | [] -> p
-        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (debug_pol_rule t;p')
+        | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q else (let (_, e1, e2), i = t, (Hashtbl.find !tbl_rule_freq t) in (Hashtbl.replace !tbl_rule_freq t (i+1)) ;Log.printf "\n%d: %a --> %a\n" i Print.pp_expr e1 Print.pp_expr e2;p')
         in let res = aux p rules in 
         if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
 ;;
 
 let normalize_list l = 
-        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule ~i:2 (x, p); p) l;;
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then (); p) l;;
 
 let _add_rwrt_term s e = match get_rwrt_term e with Some (e1, e2) -> Hashtbl.add !tbl_term s (e1, e2); true | None -> false;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
-  List.iter (fun (pol, e1, e2) -> Hashtbl.add !tbl_prop (get_hash e1) (pol, e1, e2)) rules; List.length rules > 0
+  List.iter (fun ((pol, e1, e2) as r)  -> if not (is_lit e2 && get_hash e1 = get_hash e2) then (Hashtbl.add !tbl_rule_freq r 0;Hashtbl.add !tbl_prop (get_hash e1) r)) rules; List.length rules > 0
 ;;
 
 let add_rwrt_term s e = let _ = _add_rwrt_term s e in ();;
