@@ -227,7 +227,11 @@ let argspec = [
      "<ext>            activate extension <ext>";
   "-modulo", Arg.Set modulo,
      "             build the rewrite system from TPTP meta info";
-  "-modulo-heuri", Arg.Set modulo_heuri,
+  "-disable-skolem", Arg.Clear skolem,
+     "             disable skolemization in the rewrite system";
+  "-disable-miniscoping", Arg.Clear miniscoping,
+     "             disable miniscoping in the rewrite system";
+ "-modulo-heuri", Arg.Set modulo_heuri,
      "             build the rewrite system from heuristic";
 (*  "-modulo-heuri-simple", Arg.Set modulo_heuri_simple,
      "             build the rewrite system from heuristic simple";*)

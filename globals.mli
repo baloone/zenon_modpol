@@ -25,7 +25,8 @@ val num_expr : int ref;;
 val output_dk : bool ref;;
 val modulo : bool ref;;
 val modulo_heuri : bool ref;;
-val modulo_heuri_simple : bool ref;;
+val skolem : bool ref;;
+val miniscoping : bool ref;;
 val debug_rwrt : bool ref;;
 
 val output_sig : bool ref;;
