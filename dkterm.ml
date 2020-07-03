@@ -405,9 +405,14 @@ let print_line o line =
      fprintf o "def %s : %a.\n\n" v print_dk_type t
   | Dkrwrt (_, _, Dkapp (s, _, _), _) when String.contains s '.' || s = "Is_true" ->
      ()
-  | Dkrwrt (l, pol, t1, t2) -> let s = match pol with None -> "" | Some true -> "+" | _ -> "-" in
-     fprintf o "[%a]\n %a \n -->%s %a.\n\n"
-	     pr_list_var l print_dk_term t1 s print_dk_term t2
+  | Dkrwrt (l, pol, t1, t2) -> (match pol with
+        | None -> 
+             fprintf o "[%a]\n %a \n --> %a.\n\n"
+	     pr_list_var l print_dk_term t1 print_dk_term t2
+        | Some s -> let op = if s then "zen.and" else "zen.or" in
+     fprintf o "[%a]\n %a \n -->%s (%a) (%a).\n\n"
+	     pr_list_var l print_dk_term t1 op print_dk_term t1 print_dk_term t2
+  )
 ;;
 
 let print_goal_type o name goal =
