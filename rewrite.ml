@@ -24,9 +24,19 @@ let rec ( <<? ) l l' = match l with [] -> true | t::q -> (List.mem t l') && (q <
 
 let rec ( /| ) l l' = match l with [] -> [] | t::q -> if List.mem t l' then t::(q /| l') else q /| l';;
 
-let ( --> ) e1 e2 = (None, e1, e2);;
-let ( -->+ ) e1 e2 = (Some(true), e1, e2);;
-let ( -->- ) e1 e2 = (Some(false), e1, e2);;
+let nnot = function Enot (e, _) -> e | e -> enot e;;
+
+let rec ( --> ) e1 e2 = match e1 with
+        | Enot (e, _) -> e --> (nnot e2)
+        | _ -> (None, e1, e2);;
+
+let rec ( -->+ ) e1 e2 = match e1 with
+        | Enot (e, _) -> e -->- (nnot e2)
+        | _ -> (Some(true), e1, e2)
+and ( -->- ) e1 e2 = match e1 with
+        | Enot (e, _) -> e -->+ (nnot e2)
+        | _ -> (Some(false), e1, e2);;
+
 
 let ( <<| ) tree rule = let rec aux tree = function
         | Eapp(Evar(s, _), args, _) -> Smap.update s (function
@@ -98,7 +108,7 @@ let rec matching_rules pol tree expr =
       | Some (DecTree (matches, args)) -> (match expr with
         | Eapp(_, args', _) -> List.fold_left2 (fun acc tree expr ->
                         acc /| (matching_rules pol tree expr)
-                        ) (fmt matches) args args'
+                        ) matches args args'
         | _ -> [])
     end
 ;;
@@ -153,17 +163,6 @@ let get_rwrt_term = let rec aux vars = function
   | _ -> None in aux []
 ;;
 
-let rec pos_rul e1 e2 = match e1 with 
-  | Enot(e1', _) -> begin match e2 with 
-    | Enot(e2', _) -> neg_rul e1' e2'
-    | _ -> neg_rul e1' (enot e2) end
-  | _ -> e1 -->+ e2 
-and neg_rul e1 e2 = match e1 with 
-  | Enot(e1', _) -> begin match e2 with 
-    | Enot(e2', _) -> pos_rul e1' e2'
-    | _ -> pos_rul e1' (enot e2) end
-  | _ -> e1 -->- e2 
-;;
 
 let rec nnf e = match e with 
   | Evar _ | Eapp _ -> e
@@ -264,7 +263,8 @@ let format = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
-  | Evar _  | Eapp _ -> [ex -->+ etrue; ex -->- etrue]
+  | Eapp (Evar("=",_),_,_) -> []
+  | Evar _  | Eapp _ -> [ex -->- etrue]
 
   | Earrow (args, e, _) -> []
 
@@ -272,9 +272,10 @@ let rec exp_to_rules ex = match ex with
   | Eand (e1, e2, _) -> []
   | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
-    (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [pos_rul e1 (format e2)] else []) @@
-      (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [pos_rul (enot e2)  (format (enot e1))] else [])
-  | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2)))@@(exp_to_rules (eimply(e2, e1)))
+    (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [e1 -->+ (format e2)] else []) @@
+    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- (nnot (format (nnot e1)))] else [])
+  | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2))) @@ (exp_to_rules (eimply(e2, e1)))
+ 
   | Etrue | Efalse -> []
 
   | Eall (e1, e2, _) -> exp_to_rules e2
@@ -333,14 +334,18 @@ let rsort = List.sort (fun r1 r2 -> Hashtbl.find rule_freq r2 - Hashtbl.find rul
 let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
 
 Log.set_debug 0;;
-let rec normalize_fm p = let applicable = applicable (Some true) propTree in 
+let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTree p) in 
         if not (is_lit p) then p else let p = norm_term p in
         let rules = applicable p in
+        if rules <> [] then (print_int (List.length rules);
+        pexp p;
+        print_newline());
         let rec aux p = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q 
         else begin 
                 Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);
+                print_int (Hashtbl.find rule_freq t);
                 debug_rule t ~i:(-1);
                 p'
         end
@@ -354,7 +359,7 @@ let normalize_list l =
 let _add_rwrt_term s e = match get_rwrt_term e with 
   | Some (e1, e2) when (get_fv e2) <<? (get_fv e1) -> termTree <<| e1 --> e2; true 
   | _ -> false;;
-let _add_rwrt_prop s e = let rules = exp_to_rules e in
+let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
 List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
 ;;
 

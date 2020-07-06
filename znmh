@@ -1,4 +1,6 @@
-#!/bin/sh
-./zenon_modulo -modulo -modulo-heuri -itptp $@
+#!/bin/bash
+DIR="$(dirname "${BASH_SOURCE[0]}")"
+echo $DIR
+$DIR/zenon_modulo -modulo -modulo-heuri -itptp $@
 
 

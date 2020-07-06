@@ -1,12 +1,13 @@
 #!/bin/bash
 shopt -s nullglob
-FILES=(*.p)
+DIR="$(dirname "${BASH_SOURCE[0]}")/"
+FILES=($DIR*.p)
 #zenonc="../znmh"
-zenonc="$(dirname "${BASH_SOURCE[0]}")/../zenon_modulo -modulo -modulo-heuri -itptp"
+zenonc="$DIR../zenon_modulo -modulo -modulo-heuri -itptp"
 card=${#FILES[*]}
 fails=0
 success=0
-timeout="8s"
+timeout="303030s"
 
 echo "$card files to check."
  
