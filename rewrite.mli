@@ -18,10 +18,9 @@ val add_rwrt_prop : string -> expr -> unit;;
 val select_rwrt_rules : Phrase.phrase list -> Phrase.phrase list;;
 
 
-type rule = expr * expr;;
-type pol_rule = bool * expr * expr;;
+type rule = (bool option) * expr * expr;;
 type tbl = (string, rule) Hashtbl.t;;
-type poltbl = (string, pol_rule) Hashtbl.t;;
+type poltbl = (string, rule) Hashtbl.t;;
 
-val tbl_term : tbl ref;;
-val tbl_prop : poltbl ref;;
+val tbl_term : ((string, expr * expr) Hashtbl.t) ref;;
+val tbl_prop : ((string, bool * expr * expr) Hashtbl.t) ref;;

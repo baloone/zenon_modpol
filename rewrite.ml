@@ -1,59 +1,67 @@
 (*  Copyright 2003 INRIA  *)
 Version.add "$Id$";;
 
-
-
 open Expr;;
 open Phrase;;
 
 
-let rec ( @@ ) l = function 
-  | [] -> l
-  | t::q -> let q' = (l@@q) in if List.mem t q' then q' else t::q'
+module Smap = Map.Make(String);;
+
+type rule = bool option * expr * expr;;
+type rule_matches = rule list;;
+type dec_tree = DecTree of rule_matches * dec_tree Smap.t list;;
+
+exception Bad_Rewrite_Rule of string * expr;;
+
+let rec ( @@ ) l l' = match l with 
+  | [] -> l'
+  | t::q -> let q' = (q@@l') in if List.mem t q' then q' else t::q'
 ;;
 
 let ( % ) f g = fun x -> f (g x);;
 
 let rec ( <<? ) l l' = match l with [] -> true | t::q -> (List.mem t l') && (q <<? l');;
 
+let rec ( /| ) l l' = match l with [] -> [] | t::q -> if List.mem t l' then t::(q /| l') else q /| l';;
 
-type rule = expr * expr;;
-type pol_rule = bool * expr * expr;;
+let ( --> ) e1 e2 = (None, e1, e2);;
+let ( -->+ ) e1 e2 = (Some(true), e1, e2);;
+let ( -->- ) e1 e2 = (Some(false), e1, e2);;
+
+let ( <<| ) tree rule = let rec aux tree = function
+        | Eapp(Evar(s, _), args, _) -> Smap.update s (function
+    | None -> Some (DecTree([rule], List.map (aux Smap.empty) args))
+    | Some (DecTree(matches, args')) -> Some (DecTree (rule::matches, List.map2 aux args' args))
+  ) tree
+  | Evar _ -> Smap.update "" (function
+    | None -> Some (DecTree ([rule], []))
+    | Some (DecTree (matches, args)) -> Some (DecTree (rule::matches, args))
+  ) tree
+  | _ -> failwith "add_rule"
+  in let (_, r1, _) = rule in tree := aux !tree r1
+;;
+
+let ( !! ) = function
+  | None -> None
+  | Some e -> Some (not e)
+;;
+
+let ( *< ) a b = match b with None -> true | Some true | Some false -> a = b;; 
+
 type tbl = (string, rule) Hashtbl.t;;
-type poltbl = (string, pol_rule) Hashtbl.t;;
+type poltbl = (string, rule) Hashtbl.t;;
 let tbl_term = ref (Hashtbl.create 42);;
 let tbl_prop = ref (Hashtbl.create 42);;
-let tbl_rule_freq = ref (Hashtbl.create 42);;
-exception Bad_Rewrite_Rule of string * expr;;
-(*
-type rules4 = Map of string * rules4 * ((expr * expr) list) option | Lis of rules4 list | Void;;
+let op = ref (Hashtbl.create 42);;
+let rule_freq = Hashtbl.create 42;;
 
-let ( ||< ) a = let aux e1 e2 = match e1, e2 with
-  | Evar (s, _), _ -> (match !a with Void -> a := Map(s, Void, Some [e1, e2])
-    | Map (s', r, o) when s = s' -> let l = match o with None -> [] | Some l' -> l' in 
-      a := Map(s, r, Some ((e1, e2)::l)) 
-    | Lis l -> a:= Lis (Map(s, Void, Some [e1, e2])::l)
-    | r -> a:= Lis [Map(s, Void, Some [e1, e2]); r]
-    )
-  | Eapp (v, args, _), Eapp(v', args', _) when equal v v' ->
-    let args_map = List (List.map2 (fun x y -> let a = ref Void in) args args')
-  | _ -> failwith "rules4"
-  in aux
-;;
-let ( ||! ) a b = b;;
-let t = ref Void;;
-
-*)
 
 let pexp = Print.expr_soft (Print.Chan stdout);;
 
-let sign pol = if pol then "+" else "-";;
+let sign pol = match pol with Some p -> if p then "+" else "-" | _ -> "";;
 
-let debug_pol_rule ?(i=1) (r, e1, e2) = let s = sign r in
-        Log.debug i "%a -->%s %a\n" Print.pp_expr e1 s Print.pp_expr e2; 
-;;
-let debug_rule ?(i=1) (e1, e2) =
-        Log.debug i "%a --> %a\n" Print.pp_expr e1 Print.pp_expr e2; 
+let debug_rule ?(i=1) (pol, e1, e2) =
+        Log.debug i "%a -->%s %a\n" Print.pp_expr e1 (sign pol) Print.pp_expr e2; 
 ;;
 
 let rules = ref [];;
@@ -71,10 +79,28 @@ let rec lit_pol = function
 ;;
 
 let rec get_hash = let rec aux b = function
-  | Eapp (Evar(sym, _), args, _) -> sym(*^(sign b)*)
+  | Eapp (Evar(sym, _), args, _) -> sym
   | Enot (t1, _) -> aux (not b) t1
   | _ -> ""
   in aux true
+;;
+let propTree = ref Smap.empty;;
+let termTree = ref Smap.empty;;
+
+let rec matching_rules pol tree expr = 
+        let fmt l = List.filter (fun (pol',_,_) -> pol *< pol') l in
+        (match Smap.find_opt "" tree with
+    | None -> []
+    | Some(DecTree(matches, _)) -> fmt matches) @@ begin
+            let s = get_hash expr in
+            match Smap.find_opt s tree with 
+      | None -> []
+      | Some (DecTree (matches, args)) -> (match expr with
+        | Eapp(_, args', _) -> List.fold_left2 (fun acc tree expr ->
+                        acc /| (matching_rules pol tree expr)
+                        ) (fmt matches) args args'
+        | _ -> [])
+    end
 ;;
 
 let rec fv_from_name s expr = match expr with
@@ -93,7 +119,7 @@ exception ApplyRule;;
 
 let rec apply_rule (pol, r1, r2) e =   
   let rec aux b acc e1 e2 = match e1, e2 with
-    | _, Enot(e2', _) -> aux (not b) acc e1 e2'
+    | _, Enot(e2', _) -> aux (!! b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
       List.fold_left2 (aux b) acc args args'
     | Evar _, _ -> if b=pol then (
@@ -108,16 +134,16 @@ let rec apply_rule (pol, r1, r2) e =
     (*substitute_safe (List.map (fun (x,y) -> (type_subst x, type_subst y)) vars) (type_subst e)*)
     types@@vars
   in 
-  try let map = f_map (aux true [] r1 e) in
-  (if pol then (fun x -> x) else enot) (try 
+  try let map = f_map (aux (match pol with Some _ -> Some true | _ -> pol) [] r1 e) in
+  (if pol=None || pol=Some(true) then (fun x -> x) else enot) (try 
     substitute map r2
-  with _ -> debug_rule (e, r2); raise (Ill_typed_substitution map))
+  with _ -> debug_rule (None, e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e
 
 ;;
 
 
-let not_cyclic t1 t2 = not (equal (apply_rule (true, t1, t2) t2) t2)
+let not_cyclic t1 t2 = not (equal (apply_rule (t1 --> t2) t2) t2)
 let get_rwrt_term = let rec aux vars = function
   | Eapp (Evar ("=", _), [t1; t2], _) -> 
     let fv1, fv2 = get_fv t1, get_fv t2 in
@@ -131,12 +157,12 @@ let rec pos_rul e1 e2 = match e1 with
   | Enot(e1', _) -> begin match e2 with 
     | Enot(e2', _) -> neg_rul e1' e2'
     | _ -> neg_rul e1' (enot e2) end
-  | _ -> (true, e1, e2) 
+  | _ -> e1 -->+ e2 
 and neg_rul e1 e2 = match e1 with 
   | Enot(e1', _) -> begin match e2 with 
     | Enot(e2', _) -> pos_rul e1' e2'
     | _ -> pos_rul e1' (enot e2) end
-  | _ -> (false, e1, e2) 
+  | _ -> e1 -->- e2 
 ;;
 
 let rec nnf e = match e with 
@@ -238,7 +264,7 @@ let format = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
-  | Evar _  | Eapp _ -> [(true, ex, etrue); (false, ex, etrue)]
+  | Evar _  | Eapp _ -> [ex -->+ etrue; ex -->- etrue]
 
   | Earrow (args, e, _) -> []
 
@@ -256,17 +282,20 @@ let rec exp_to_rules ex = match ex with
   | Etau (e1, e2, _) -> []
   | Elam (e1, e2, _) -> []
 ;;
-
+let applicable = let rec aux pol tree = function
+        | Enot(e, _) -> aux (!!pol) tree e
+        | e -> matching_rules pol !tree e
+in aux
+;;
 
 let rec norm_term t =
   let rec aux rules t =
     match rules with
       | [] -> t
-      | (l, r) :: tl ->
-        aux tl (apply_rule (true, l, r) t)
+      | r :: tl ->
+        aux tl (apply_rule r t)
   in
-  try
-  let rules = Hashtbl.find_all !tbl_term (get_hash t) in
+  let rules = applicable None termTree t in
   let new_t = aux rules t in
   if not (Expr.equal t new_t)
   then
@@ -293,7 +322,6 @@ let rec norm_term t =
 
       | _ -> t
     end
-  with _ -> pexp t; failwith "incredible"
 
 ;;
 let rec profondeur = function
@@ -301,34 +329,33 @@ let rec profondeur = function
     | Eand (e1, e2, _) | Eor (e1, e2, _) | Eimply (e1, e2, _) | Eequiv (e1, e2, _) -> 1 + max (profondeur e1) (profondeur e2)
     | _ -> 0;;
   
-let rsort = List.sort (fun r1 r2 -> (Hashtbl.find !tbl_rule_freq r2) - (Hashtbl.find !tbl_rule_freq r1));;
+let rsort = List.sort (fun r1 r2 -> Hashtbl.find rule_freq r2 - Hashtbl.find rule_freq r1);;
 let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
-let applicable p = (Hashtbl.find_all !tbl_prop (get_hash p));;
 
-let rec normalize_fm p =
-        if not (is_lit p) then  p else let p = norm_term p in
-        let rules = (rsort % applicable) p in 
-        (*List.iter (debug_pol_rule ~i:1) rules;*)
+Log.set_debug 0;;
+let rec normalize_fm p = let applicable = applicable (Some true) propTree in 
+        if not (is_lit p) then p else let p = norm_term p in
+        let rules = applicable p in
         let rec aux p = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q 
-        else begin let (_, e1, e2), i = t, (Hashtbl.find !tbl_rule_freq t) in
-        (Hashtbl.replace !tbl_rule_freq t (i+1));
-        debug_pol_rule t;
-        p'
+        else begin 
+                Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);
+                debug_rule t ~i:(-1);
+                p'
         end
         in let res = aux p rules in 
         if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
 ;;
 
 let normalize_list l = 
-        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (x, p); p) l;;
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
 
 let _add_rwrt_term s e = match get_rwrt_term e with 
-  | Some (e1, e2) when (get_fv e2) <<? (get_fv e1) -> Hashtbl.add !tbl_term s (e1, e2); true 
+  | Some (e1, e2) when (get_fv e2) <<? (get_fv e1) -> termTree <<| e1 --> e2; true 
   | _ -> false;;
-let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
-  List.iter (fun ((pol, e1, e2) as r)  -> if not (is_lit e2 && get_hash e1 = get_hash e2) then (Hashtbl.add !tbl_rule_freq r 0;Hashtbl.add !tbl_prop (get_hash e1) r)) rules; List.length rules > 0
+let _add_rwrt_prop s e = let rules = exp_to_rules e in
+List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
 ;;
 
 let add_rwrt_term s e = let _ = _add_rwrt_term s e in ();;
@@ -362,9 +389,7 @@ let select_rwrt_rules phrases =
   Log.debug 1 "Select Rewrite Rules";
   let res = List.map add_phrase phrases in 
   Log.debug 1 "--------------term rwrt rules:";
-  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_rule ~i:1) !tbl_term;
   Log.debug 1 "--------------prop rwrt rules:";
-  Hashtbl.iter (fun s -> Log.debug 1 "%s: " s; debug_pol_rule ~i:1) !tbl_prop;
   Log.debug 1 "\n====================";
   res
 ;;
