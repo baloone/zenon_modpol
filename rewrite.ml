@@ -141,7 +141,7 @@ let rec apply_rule (pol, r1, r2) e =
     types@@vars
   in 
   try let map = f_map (aux (match pol with Some _ -> Some true | _ -> pol) [] r1 e) in
-  (if Some(true) ~< pol then (fun x -> x) else enot) (try 
+  (if Some(true) *< pol then (fun x -> x) else enot) (try 
     substitute map r2
   with _ -> debug_rule ~i:(-1) (pol, r1, r2); debug_rule ~i:(-1) (None, e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e 
@@ -358,6 +358,7 @@ let normalize_list l =
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
 
 let _add_rwrt_term s e = let l = get_rwrt_terms e in
+if l <> [] then print_endline "O_o";
 List.iter (fun (e1, e2) -> debug_rule ~i:(-1) (e1 --> e2)) l;
   List.iter (fun (e1, e2) -> termTree <<| e1 --> e2) l; 
   List.length l > 0;;
