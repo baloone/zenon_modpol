@@ -1,0 +1,26 @@
+name: Run examples
+on: push
+jobs:
+        test:
+                runs-on: ubuntu-latest
+                strategy:
+                  matrix:
+                    ocaml-version:
+                      - 4.08.1
+                steps:
+                - name: Set up OCaml
+                  uses: avsm/setup-ocaml@v1.0.1
+
+                - name: install dependencies
+                  run: |
+                        opam install zarith
+                - uses: actions/checkout@v1
+                - name: build zenon
+                  run: |
+                        eval $(opam env)
+                        ./configure
+                        make
+                - name: run examples
+                  run: |
+                        ./examples/launch.sh
+
