@@ -149,21 +149,22 @@ let rec apply_rule (pol, r1, r2) e =
 ;;
 
 
-let not_cyclic t1 t2 = not (equal (apply_rule (t1 --> t2) t2) t2)
+let not_cyclic t1 t2 = true (*TODO*)
 let get_rwrt_terms =
   let rec prof = function
      | Eapp(_, [], _) -> 1
      | Evar _ -> 0
      | Eapp(_, t::args, _) -> 
-        List.fold_left (fun a b -> max a (prof b)) (prof t) args in
+        1+List.fold_left (fun a b -> max a (prof b)) (prof t) args in
   let rec aux vars = function
   | Eapp (Evar ("=", _), [t1; t2], _) ->
     let aux' t1 t2 = if is_lit t1 
       && (get_fv t2) <<? (get_fv t1) 
       && (get_fv t1) <<? vars
+      && (prof t2 <= prof t1)
       && (not_cyclic t1 t2)
-      then [t1,t2] else []
-    in if prof t1 < prof t2 then aux' t2 t1 else aux' t1 t2
+    then [t1 --> t2] else []
+    in  (aux' t1 t2) @ (aux' t2 t1)
   | Eall(Evar(s,_), e, _) -> aux (s::vars) e
   | Eand(e1, e2, _) -> (aux vars e1)@(aux vars e2)
   | _ -> [] in aux []
@@ -358,9 +359,8 @@ let normalize_list l =
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
 
 let _add_rwrt_term s e = let l = get_rwrt_terms e in
-if l <> [] then print_endline "O_o";
-List.iter (fun (e1, e2) -> debug_rule ~i:(-1) (e1 --> e2)) l;
-  List.iter (fun (e1, e2) -> termTree <<| e1 --> e2) l; 
+  List.iter (debug_rule ~i:(1)) l;
+  List.iter (fun r -> termTree <<| r) l; 
   List.length l > 0;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
 List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
