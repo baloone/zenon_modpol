@@ -101,7 +101,7 @@ let rec matching_rules pol tree expr =
         let fmt l = List.filter (fun (pol',_,_) -> pol *< pol') l in
         (match Smap.find_opt "" tree with
     | None -> []
-    | Some(DecTree(matches, _)) -> fmt matches) @@ begin
+    | Some(DecTree(matches, _)) -> (*fmt*) matches) @@ begin
             let s = get_hash expr in
             match Smap.find_opt s tree with 
       | None -> []
@@ -132,7 +132,7 @@ let rec apply_rule (pol, r1, r2) e =
     | _, Enot(e2', _) -> aux (!! b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
       List.fold_left2 (aux b) acc args args'
-    | Evar _, _ -> if b=pol then (
+    | Evar _, _ -> if b *< pol then (
       if List.mem_assq e1 acc then (
         if not (equal (List.assq e1 acc) e2) then raise ApplyRule else acc
         ) else (e1, e2)::acc) else raise ApplyRule
@@ -140,8 +140,8 @@ let rec apply_rule (pol, r1, r2) e =
   in let f_map map = let types, vars = List.partition (fun (x,_) -> get_type x = type_type) map in
     types@@vars
   in 
-  try let map = f_map (aux (match pol with Some _ -> Some true | _ -> pol) [] r1 e) in
-  (if Some(true) *< pol then (fun x -> x) else enot) (try 
+  try let map = f_map (aux (if pol = None then pol else Some true) [] r1 e) in
+  (if equal (nnot e) (enot e) then fun x -> x else nnot) (try 
     substitute map r2
   with _ -> debug_rule ~i:(-1) (pol, r1, r2); debug_rule ~i:(-1) (None, e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e 
@@ -193,7 +193,7 @@ let rec nnf e = match e with
   | _ -> e
 ;;
 
-let rec miniscoping expr = let mini = miniscoping in
+let rec miniscoping pol expr = let mini = miniscoping pol in
     let pall v e = if List.mem (get_name v) (get_fv e) then eall(v,e) else e in
     let pex v e = if List.mem (get_name v) (get_fv e) then eex(v,e) else e in
     let auxQ e a b = (function
@@ -203,20 +203,22 @@ let rec miniscoping expr = let mini = miniscoping in
             | Eex _ -> fun (x, y) -> pex x y
             | _ -> assert false) e (a,b)
     in
-    match expr with 
-    | Emeta _  | Evar _  | Eapp _ | Enot _ -> expr
-    | Eand(e1, e2, _) -> eand(mini e1, mini e2)
-    | Eor(e1, e2, _) -> eor(mini e1, mini e2)
-    | Eex(e1, Eor(e1', e2', _), _) -> eor(pex (mini e1) (mini e1'), pex (mini e1) (mini e2'))
-    | Eall(e1, Eand(e1', e2', _), _) -> eand(pall (mini e1) (mini e1'), pall (mini e1) (mini e2'))
-    | Eall(e1, e2, _) | Eex(e1, e2, _) -> let q = auxQ expr in (
+    match pol, expr with 
+    | _, Emeta _  | _, Evar _  | _, Eapp _ | _, Enot _ -> expr
+    | _, Eand(e1, e2, _) -> eand(mini e1, mini e2)
+    | _, Eor(e1, e2, _) -> eor(mini e1, mini e2)
+    | false, Eex(e1, Eor(e1', e2', _), _) -> eor(pex (mini e1) (mini e1'), pex (mini e1) (mini e2'))
+    | true, Eall(e1, Eand(e1', e2', _), _) -> eand(pall (mini e1) (mini e1'), pall (mini e1) (mini e2'))
+    | true, Eall(e1, e2, _) | false, Eex(e1, e2, _) -> let q = auxQ expr in (
             match e2 with 
                 | Eand (e1', e2', _) | Eor (e1', e2', _) -> 
                         let o = auxQ e2 in
                         o (mini (q e1 e1')) (mini (q e1 e2'))
                 | _ -> q e1 (mini e2)
     )
-    | e -> e
+    | _, Eex(e1, e, _) -> eex(e1, mini e)
+    | _, Eall(e1, e, _) -> eall(e1, mini e)
+    | _, e -> e
 ;;
 let rec replace_var s r expr = 
   if not (List.mem s (get_fv expr)) then expr else
@@ -266,8 +268,9 @@ let get_rwrt_from_def = function
 
 
 let id x = x;;
-let format = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping else id)% nnf;;
-
+let formatp = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping true else id)% nnf;;
+let formatm = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping false else id)% nnf;;
+let formatm, formatp = id, id;;
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
   | Eapp (Evar("=",_),_,_) -> []
@@ -279,9 +282,13 @@ let rec exp_to_rules ex = match ex with
   | Eand (e1, e2, _) -> (exp_to_rules e1)@(exp_to_rules e2)
   | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
-    (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [e1 -->+ (format e2)] else []) @@
-    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- (nnot (format (nnot e1)))] else [])
-  | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2))) @@ (exp_to_rules (eimply(e2, e1)))
+    (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [e1 -->+ (formatp e2)] else []) @@
+    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- (nnf (nnot (formatm (nnot e1))))] else [])
+  | Eequiv (e1, e2, _) -> 
+  let aux r1 r2 = let (_,a,b),(_,_,c)=r1,r2 in if equal b c then [a --> b] else [r1; r2] in
+  (if is_lit e1 && (get_fv e2 <<? get_fv e1) then aux (e1 -->+ (formatp e2)) (e1 -->- (nnf (nnot (formatm (nnot e2))))) else []) @@
+  (if is_lit e2 && (get_fv e1 <<? get_fv e2) then aux (e2 -->+ (formatp e1)) (e2 -->- (nnf (nnot (formatm (nnot e1))))) else [])
+
  
   | Etrue | Efalse -> []
 
@@ -348,7 +355,7 @@ let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTr
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q 
         else begin 
                 Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);
-                debug_rule t;
+                debug_rule ~i:(-1) t;
                 p'
         end
         in let res = aux p rules in 
@@ -377,7 +384,8 @@ let rec add_phrase phrase =
     -> add_rwrt_term name body; add_rwrt_prop name body; phrase
   | Hyp (name, body, flag)
        (*when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) *)
-    -> if (!Globals.modulo_heuri) then 
+    ->  print_endline name;
+    if (!Globals.modulo_heuri) then 
             let b = _add_rwrt_term name body in
             let b' = _add_rwrt_prop name body in
             (if (b||b') then Rew(name, body, if b then 0 else 1)  else phrase)
@@ -385,19 +393,22 @@ let rec add_phrase phrase =
   | Def (DefRec _) ->
      (* Recursive definitions are not turned into rewrite-rules (yet) *)
      phrase 
-  | Def d ->
+  | Def d -> 
      let (name, body) = get_rwrt_from_def d in
+     print_endline ("#"^name);
      add_rwrt_term name body;
      phrase
-  |  _ -> phrase
+  |  _ ->print_endline "OMG"; phrase
 ;;
 
 let select_rwrt_rules phrases =
   Log.debug 1 "====================";
   Log.debug 1 "Select Rewrite Rules";
   let res = List.map add_phrase phrases in 
-  Log.debug 1 "--------------term rwrt rules:";
-  Log.debug 1 "--------------prop rwrt rules:";
-  Log.debug 1 "\n====================";
+  Log.debug (-1) "--------------term rwrt rules:";
+  Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:(-1)) t) !termTree;
+  Log.debug (-1) "--------------prop rwrt rules:";
+  Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:(-1)) t) !propTree;
+  Log.debug (-1) "\n====================";
   res
 ;;
