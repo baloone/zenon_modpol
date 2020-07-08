@@ -127,7 +127,8 @@ let rec fv_from_name s expr = match expr with
 
 exception ApplyRule;;
 
-let rec apply_rule (pol, r1, r2) e =   
+let rec apply_rule (pol, r1, r2) e =
+  let rec sign = function Enot(e,_) -> not (sign e) | _ -> true in
   let rec aux b acc e1 e2 = match e1, e2 with
     | _, Enot(e2', _) -> aux (!! b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
@@ -141,7 +142,7 @@ let rec apply_rule (pol, r1, r2) e =
     types@@vars
   in 
   try let map = f_map (aux (if pol = None then pol else Some true) [] r1 e) in
-  (if equal (nnot e) (enot e) then fun x -> x else nnot) (try 
+  (if sign e then fun x -> x else nnot) (try 
     substitute map r2
   with _ -> debug_rule ~i:(-1) (pol, r1, r2); debug_rule ~i:(-1) (None, e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e 
@@ -149,7 +150,13 @@ let rec apply_rule (pol, r1, r2) e =
 ;;
 
 
-let not_cyclic t1 t2 = true (*TODO*)
+let rec not_cyclic t1 t2 = match t1, t2 with
+  | Enot(e,_), _ -> not_cyclic e t2
+  | _, Enot(e,_) -> not_cyclic t1 e
+  | Eapp(v, args, _), Eapp(v', args', _) -> not (equal v v') || List.exists2 not_cyclic args args'
+  | Evar _ , _ -> false
+  | _ -> true
+;;
 let get_rwrt_terms =
   let rec prof = function
      | Eapp(_, [], _) -> 1
@@ -242,7 +249,7 @@ let rec replace_var s r expr =
 let skolem expr = 
   let rec aux vars expr = match expr with
     | Emeta _  | Evar _  | Eapp _ -> expr
-    | Enot (e, _) -> enot(aux vars e)
+    | Enot (e, _) -> expr
     | Eand(e1, e2, _) -> eand(aux vars e1, aux vars e2)
     | Eor(e1, e2, _) -> eor(aux vars e1, aux vars e2)
     | Eimply(e1, e2, _) -> expr
@@ -268,8 +275,8 @@ let get_rwrt_from_def = function
 
 
 let id x = x;;
-let formatp = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping true else id)% nnf;;
-let formatm = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping false else id)% nnf;;
+let formatp = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping true else id) % nnf;;
+let formatm = (if !Globals.skolem then skolem else id) % nnf;;
 let formatm, formatp = id, id;;
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
@@ -283,11 +290,11 @@ let rec exp_to_rules ex = match ex with
   | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
     (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [e1 -->+ (formatp e2)] else []) @@
-    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- (nnf (nnot (formatm (nnot e1))))] else [])
+    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- (nnf (nnot (formatm (nnot (miniscoping false e1)))))] else [])
   | Eequiv (e1, e2, _) -> 
   let aux r1 r2 = let (_,a,b),(_,_,c)=r1,r2 in if equal b c then [a --> b] else [r1; r2] in
-  (if is_lit e1 && (get_fv e2 <<? get_fv e1) then aux (e1 -->+ (formatp e2)) (e1 -->- (nnf (nnot (formatm (nnot e2))))) else []) @@
-  (if is_lit e2 && (get_fv e1 <<? get_fv e2) then aux (e2 -->+ (formatp e1)) (e2 -->- (nnf (nnot (formatm (nnot e1))))) else [])
+  (if is_lit e1 && (get_fv e2 <<? get_fv e1) then aux (e1 -->+ (formatp e2)) (e1 -->- (nnf (nnot (formatm (nnot (miniscoping false e2)))))) else []) @@
+  (if is_lit e2 && (get_fv e1 <<? get_fv e2) then aux (e2 -->+ (formatp e1)) (e2 -->- (nnf (nnot (formatm (nnot (miniscoping false e1)))))) else [])
 
  
   | Etrue | Efalse -> []
@@ -356,7 +363,7 @@ let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTr
         else begin 
                 Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);
                 debug_rule ~i:(-1) t;
-                p'
+                eand(p', aux p q)
         end
         in let res = aux p rules in 
         if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
@@ -370,6 +377,7 @@ let _add_rwrt_term s e = let l = get_rwrt_terms e in
   List.iter (fun r -> termTree <<| r) l; 
   List.length l > 0;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
+let rules = List.filter (fun (_, e1, e2) -> not_cyclic e1 e2) rules in 
 List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
 ;;
 
