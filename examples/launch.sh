@@ -7,9 +7,10 @@ zenonc="$DIR../zenon_modulo -modulo -modulo-heuri -itptp"
 card=${#FILES[*]}
 fails=0
 success=0
-timeout="303030s"
+timeout="300s"
 
 echo "$card files to check."
+echo -ne "success: $success/$card, fails: $fails/$card\r"
  
 for ((j=0; j < card; j++))
 do

@@ -240,7 +240,7 @@ let rec replace_var s r expr =
 let skolem expr = 
   let rec aux vars expr = match expr with
     | Emeta _  | Evar _  | Eapp _ -> expr
-    | Enot (e, _) -> enot(aux vars e)
+    | Enot (e, _) -> expr
     | Eand(e1, e2, _) -> eand(aux vars e1, aux vars e2)
     | Eor(e1, e2, _) -> eor(aux vars e1, aux vars e2)
     | Eimply(e1, e2, _) -> expr
