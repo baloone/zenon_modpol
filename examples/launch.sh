@@ -20,14 +20,14 @@ do
 	else
 		((fails++))
 		if [[ "$1" == "-d" ]]; then
-			echo -e "\033[1K$i"
+			echo -e "\e[1K$i"
 		fi
 	fi
 	echo -ne "success: $success/$card, fails: $fails/$card\r"
 done
 echo ""
 echo "FINISHED"
-if (($fails > 1)) 
+if (($fails > 4)) 
 then exit -1
 fi
 

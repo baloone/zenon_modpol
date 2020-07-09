@@ -127,7 +127,8 @@ let rec fv_from_name s expr = match expr with
 
 exception ApplyRule;;
 
-let rec apply_rule (pol, r1, r2) e =   
+let rec apply_rule (pol, r1, r2) e =
+  let rec pole = function Enot(e,_) -> not (pole e) | _ -> true in 
   let rec aux b acc e1 e2 = match e1, e2 with
     | _, Enot(e2', _) -> aux (!! b) acc e1 e2'
     | Eapp (v, args, _), Eapp(v', args', _) when get_name v = get_name v' ->
@@ -141,7 +142,7 @@ let rec apply_rule (pol, r1, r2) e =
     types@@vars
   in 
   try let map = f_map (aux (match pol with Some _ -> Some true | _ -> pol) [] r1 e) in
-  (if Some(true) *< pol then (fun x -> x) else enot) (try 
+  (if pole e then (fun x -> x) else enot) (try 
     substitute map r2
   with _ -> debug_rule ~i:(-1) (pol, r1, r2); debug_rule ~i:(-1) (None, e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e 
@@ -149,7 +150,7 @@ let rec apply_rule (pol, r1, r2) e =
 ;;
 
 
-let not_cyclic t1 t2 = true (*TODO*)
+(*let not_cyclic t1 t2 = true (*TODO*)*)
 let get_rwrt_terms =
   let rec prof = function
      | Eapp(_, [], _) -> 1
@@ -162,9 +163,8 @@ let get_rwrt_terms =
       && (get_fv t2) <<? (get_fv t1) 
       && (get_fv t1) <<? vars
       && (prof t2 <= prof t1)
-      && (not_cyclic t1 t2)
     then [t1 --> t2] else []
-    in  (aux' t1 t2) @ (aux' t2 t1)
+    in  (aux' t1 t2) (*@ (aux' t2 t1)*)
   | Eall(Evar(s,_), e, _) -> aux (s::vars) e
   | Eand(e1, e2, _) -> (aux vars e1)@(aux vars e2)
   | _ -> [] in aux []
@@ -180,6 +180,8 @@ let rec nnf e = match e with
     | Eor (e1, e2, _) -> eand (nnf (enot e1), nnf (enot e2))
     | Eall (e1, e2, _) -> eex (e1, nnf (enot e2))
     | Eex (e1, e2, _) -> eall (e1, nnf (enot e2))
+    | Etrue -> efalse
+    | Efalse -> etrue
     | _ -> e
     end
   | Eand (e1, e2, _) -> eand (nnf e1, nnf e2)
@@ -296,6 +298,7 @@ let applicable = let rec aux pol tree = function
 in aux
 ;;
 
+let rsort = List.sort (fun r1 r2 -> Hashtbl.find rule_freq r2 - Hashtbl.find rule_freq r1);;
 let rec norm_term t =
   let rec aux rules t =
     match rules with
@@ -315,7 +318,7 @@ let rec norm_term t =
   else
     begin
       match t with
-      | Eapp (f, args, _) ->
+      | Eapp (f, args, _) -> 
 	eapp (f, (List.map norm_term args))
       | Enot (t1, _) ->
 	enot (norm_term t1)
@@ -337,11 +340,12 @@ let rec profondeur = function
     | Eand (e1, e2, _) | Eor (e1, e2, _) | Eimply (e1, e2, _) | Eequiv (e1, e2, _) -> 1 + max (profondeur e1) (profondeur e2)
     | _ -> 0;;
   
-let rsort = List.sort (fun r1 r2 -> Hashtbl.find rule_freq r2 - Hashtbl.find rule_freq r1);;
 let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
 
 let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTree p) in 
-        if not (is_lit p) then p else let p = norm_term p in
+        if not (is_lit p) then p else 
+        let rec aux l p = let p' = norm_term p in if List.exists (equal p') l then p else let p'' = aux (p'::l) p' in p'' in 
+        let p = aux [p] p in
         let rules = applicable p in
         let rec aux p = function 
         | [] -> p
@@ -352,15 +356,15 @@ let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTr
                 p'
         end
         in let res = aux p rules in 
-        if equal res p then p else let p' = aux res (applicable res) in if equal p p' then p else p'
+        if equal res p then p else let p' = aux res (applicable res) in if equal p p' then nnf p else nnf p'
 ;;
 
-let normalize_list l = 
+let normalize_list l =
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
 
 let _add_rwrt_term s e = let l = get_rwrt_terms e in
   List.iter (debug_rule ~i:(1)) l;
-  List.iter (fun r -> termTree <<| r) l; 
+  List.iter (fun r -> termTree <<| r; Hashtbl.add rule_freq r 0) l; 
   List.length l > 0;;
 let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
 List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
