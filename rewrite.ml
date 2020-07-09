@@ -280,7 +280,7 @@ let rec exp_to_rules ex = match ex with
   | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
     (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [e1 -->+ (format e2)] else []) @@
-    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- (nnot (format (nnot e1)))] else [])
+    (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- nnf (nnot (format (nnot e1)))] else [])
   | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2))) @@ (exp_to_rules (eimply(e2, e1)))
  
   | Etrue | Efalse -> []
@@ -393,11 +393,14 @@ let rec add_phrase phrase =
 ;;
 
 let select_rwrt_rules phrases =
-  Log.debug 1 "====================";
-  Log.debug 1 "Select Rewrite Rules";
+  let i = if !Globals.debug_rwrt then -1 else 1 in 
+  Log.debug i "====================";
+  Log.debug i "Select Rewrite Rules";
   let res = List.map add_phrase phrases in 
-  Log.debug 1 "--------------term rwrt rules:";
-  Log.debug 1 "--------------prop rwrt rules:";
-  Log.debug 1 "\n====================";
+  Log.debug i "--------------term rwrt rules:";
+  Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:i) t) !termTree;
+  Log.debug i "--------------prop rwrt rules:";
+  Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:i) t) !propTree;
+  Log.debug i "\n====================";
   res
 ;;
