@@ -158,7 +158,7 @@ let get_rwrt_terms =
      | Eapp(_, t::args, _) -> 
         1+List.fold_left (fun a b -> max a (prof b)) (prof t) args in
   let rec aux vars = function
-  | Eapp (Evar ("=", _), [t1; t2], _) ->
+  | Eapp (Evar ("=", _), [t1; t2], _) -> let t1, t2 = if get_fv t2 <<? get_fv t1 then t1, t2 else t2, t1 in
     let aux' t1 t2 = if is_lit t1 
       && (get_fv t2) <<? (get_fv t1) 
       && (get_fv t1) <<? vars
@@ -374,7 +374,7 @@ let normalize_fm = let rec aux l p = let p' = normalize_fm p in if List.exists (
 let normalize_list l =
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
 
-let _add_rwrt_term s e = let l = List.filter (not%is_cyclic) (get_rwrt_terms e) in
+let _add_rwrt_term s e = let l = (*List.filter (not%is_cyclic*) (get_rwrt_terms e) in
   List.iter (debug_rule ~i:(1)) l;
   List.iter (fun r -> termTree <<| r; Hashtbl.add rule_freq r 0) l; 
   List.length l > 0;;
