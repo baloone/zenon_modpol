@@ -99,9 +99,7 @@ let termTree = ref Smap.empty;;
 
 let rec matching_rules pol tree expr = 
         let fmt l = List.filter (fun (pol',_,_) -> pol *< pol') l in
-        (match Smap.find_opt "" tree with
-    | None -> []
-    | Some(DecTree(matches, _)) -> fmt matches) @@ begin
+        begin
             let s = get_hash expr in
             match Smap.find_opt s tree with 
       | None -> []
@@ -110,7 +108,9 @@ let rec matching_rules pol tree expr =
                         acc /| (matching_rules pol tree expr)
                         ) matches args args'
         | _ -> [])
-    end
+    end @@ (match Smap.find_opt "" tree with
+    | None -> []
+    | Some(DecTree(matches, _)) -> fmt matches)
 ;;
 
 let rec fv_from_name s expr = match expr with
@@ -297,7 +297,17 @@ let applicable = let rec aux pol tree = function
         | e -> matching_rules pol !tree e
 in aux
 ;;
-
+let rec is_cyclic (pol, r1, r2) = let rec aux r1 r2 = match r2 with
+        | Enot (e, _) -> aux r1 e
+        | Eand(e1, e2, _)  | Eor(e1, e2, _)  | Eimply(e1, e2, _) | Eequiv(e1, e2, _) -> aux r1 e1 || aux r1 e2
+        | Eall(_, e, _) | Eex(_, e, _) -> aux r1 e
+        | Eapp _ | Evar _ -> (match r1, r2 with
+                | Enot (e,_), _  -> aux e r2
+                | Evar _, _ -> true
+                | Eapp _, Evar _ -> false
+                | Eapp(Evar(s,_),args,_), Eapp(Evar(s',_),args',_) -> s=s' && (List.for_all2 aux args args')
+                | _ -> debug_rule (pol, r1, r2); assert false)
+        | _ -> false in aux r1 r2;;
 let rsort = List.sort (fun r1 r2 -> Hashtbl.find rule_freq r2 - Hashtbl.find rule_freq r1);;
 let rec norm_term t =
   let rec aux rules t =
@@ -353,20 +363,22 @@ let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTr
         else begin 
                 Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);
                 debug_rule t;
+                debug_rule (p-->p');
                 p'
         end
         in let res = aux p rules in 
-        if equal res p then p else let p' = aux res (applicable res) in if equal p p' then nnf p else nnf p'
+        if equal res p then p else let p' = aux res (applicable res) in if equal p p' then nnf p else p'
 ;;
-
+let normalize_fm = let rec aux l p = let p' = normalize_fm p in if List.exists (equal p') (p::l) then p else aux (p::l) p' in
+ aux [];;
 let normalize_list l =
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
 
-let _add_rwrt_term s e = let l = get_rwrt_terms e in
+let _add_rwrt_term s e = let l = List.filter (not%is_cyclic) (get_rwrt_terms e) in
   List.iter (debug_rule ~i:(1)) l;
   List.iter (fun r -> termTree <<| r; Hashtbl.add rule_freq r 0) l; 
   List.length l > 0;;
-let _add_rwrt_prop s e = let rules = (exp_to_rules e) in
+let _add_rwrt_prop s e = let rules = List.filter (not%is_cyclic) (exp_to_rules e) in
 List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
 ;;
 
