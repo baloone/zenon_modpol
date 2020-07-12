@@ -87,6 +87,10 @@ let rule_freq = Hashtbl.create 42;;
 let propTree = ref Smap.empty;;
 let termTree = ref Smap.empty;;
 
+let get_all_rules tree = Smap.fold (fun k (DecTree(t,_)) acc -> acc @ t) !tree [];;
+let get_prop_rules () = get_all_rules propTree;;
+let get_term_rules () = get_all_rules termTree;;
+
 let rec matching_rules pol tree expr = 
         let fmt l = List.filter (fun (pol',_,_) -> pol *< pol') l in
         begin

@@ -16,3 +16,5 @@ val add_rwrt_term : string -> expr -> unit;;
 val add_rwrt_prop : string -> expr -> unit;;
 
 
+val get_term_rules : unit -> (bool option * expr * expr) list;;
+val get_prop_rules : unit -> (bool option * expr * expr) list;;
