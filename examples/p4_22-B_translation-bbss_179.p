@@ -597,10 +597,10 @@ tff(non_empty_finite_subsets_def, axiom, ![A : $tType]: ![S:set(A), X:
   (is_finite_subset(A, X, S, C) & ~ infix_eqeq(A, X, empty(A))))).
 
 tff(card, type, card: !>[A : $tType]: (set(A) > $int)).
-
+/*
 tff(card_def, axiom, ![A : $tType]: ![S:set(A), X:set(A), C:$int]:
   (is_finite_subset(A, X, S, C) => (card(A, X) = C))).
-
+*/
 tff(min, type, min: set($int) > $int).
 
 tff(min_belongs, axiom, ![S:set($int)]: ((subset($int, S, natural) & ~

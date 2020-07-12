@@ -32,3 +32,4 @@ lexdk.ml
 checksum.ml
 config.ml
 .svn
+bench/*

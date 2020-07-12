@@ -58,23 +58,11 @@ let ( !! ) = function
 
 let ( *< ) a b = match b with None -> true | Some true | Some false -> a = b;; 
 
-type tbl = (string, rule) Hashtbl.t;;
-type poltbl = (string, rule) Hashtbl.t;;
-let tbl_term = ref (Hashtbl.create 42);;
-let tbl_prop = ref (Hashtbl.create 42);;
-let op = ref (Hashtbl.create 42);;
-let rule_freq = Hashtbl.create 42;;
-
-
-let pexp = Print.expr_soft (Print.Chan stdout);;
-
 let sign pol = match pol with Some p -> if p then "+" else "-" | _ -> "";;
 
 let debug_rule ?(i=1) (pol, e1, e2) =
         Log.debug i "%a -->%s %a\n" Print.pp_expr e1 (sign pol) Print.pp_expr e2; 
 ;;
-
-let rules = ref [];;
 
 let rec is_lit = function
   | Evar _ | Eapp _ -> true
@@ -94,6 +82,8 @@ let rec get_hash = let rec aux b = function
   | _ -> ""
   in aux true
 ;;
+
+let rule_freq = Hashtbl.create 42;;
 let propTree = ref Smap.empty;;
 let termTree = ref Smap.empty;;
 
@@ -156,7 +146,9 @@ let get_rwrt_terms =
      | Eapp(_, [], _) -> 1
      | Evar _ -> 0
      | Eapp(_, t::args, _) -> 
-        1+List.fold_left (fun a b -> max a (prof b)) (prof t) args in
+        1+List.fold_left (fun a b -> max a (prof b)) (prof t) args 
+     | _ -> assert false
+  in
   let rec aux vars = function
   | Eapp (Evar ("=", _), [t1; t2], _) -> let t1, t2 = if get_fv t2 <<? get_fv t1 then t1, t2 else t2, t1 in
     let aux' t1 t2 = if is_lit t1 
@@ -382,7 +374,7 @@ let rec add_phrase phrase =
   match phrase with
   | Rew (name, body, flag)
        when (flag = 2) || (flag = 1)
-    -> add_rwrt_term name body; add_rwrt_prop name body; phrase
+    -> if _add_rwrt_term name body || _add_rwrt_prop name body then phrase else raise (Bad_Rewrite_Rule(name, body))
   | Hyp (name, body, flag)
        when (flag = 2) || (flag = 1) (*|| (flag = 12) || (flag = 11) *)
     -> if (!Globals.modulo_heuri) then 
@@ -413,14 +405,14 @@ let preprocess phrases =
   res
 ;;
 
-let newnodes fm g l =
-  if equal (normalize_fm fm) fm then [] else
+let newnodes fm g l = let p = normalize_fm fm in
+  if equal p fm then [] else
   [Node.Node {
     nconc = [];
-    nrule = Ext("modulo", "rwrt", [fm]);
+    nrule = Ext("modulo", "rwrt", [fm; p]);
     nprio = Prop;
     ngoal = g;
-    nbranches = [| [normalize_fm fm] |];
+    nbranches = [| [p] |];
   } ];;
 
 Extension.register {

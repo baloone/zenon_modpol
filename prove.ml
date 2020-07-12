@@ -1203,7 +1203,7 @@ let newnodes_useless st fm g _ =
 let newnodes_extensions state fm g fms =
   let (newnodes, stop) = Node.relevant (Extension.newnodes fm g fms) in
   let insert_node s n =
-    Log.debug (-1) "--> %a" Print.pp_mlrule n.nrule;
+    Log.debug 3 "--> %a" Print.pp_mlrule n.nrule;
     {(*s with*) queue = insert s.queue n}
   in
   let state2 = List.fold_left insert_node state newnodes in
