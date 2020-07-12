@@ -331,20 +331,13 @@ let rec norm_term t =
       | Eapp (f, args, _) -> 
 	eapp (f, (List.map norm_term args))
       | Enot (t1, _) ->
-	enot (norm_term t1)
-      | Eand (t1, t2, _) ->
-	eand (norm_term t1, norm_term t2)
-      | Eor (t1, t2, _) ->
-	eor (norm_term t1, norm_term t2)
-      | Eimply (t1, t2, _) ->
-	eimply (norm_term t1, norm_term t2)
-      | Eequiv (t1, t2, _) ->
-	eequiv (norm_term t1, norm_term t2)
-
+  enot (norm_term t1)
       | _ -> t
     end
-
 ;;
+let norm_term p = let rec aux l p = let p' = norm_term p in if List.exists (equal p') l then p else let p'' = aux (p'::l) p' in p'' in
+    aux [p] p;;
+
 let rec profondeur = function
     | Eall (_, e, _) | Eex (_, e, _)  | Enot (e, _) -> 1 + profondeur e
     | Eand (e1, e2, _) | Eor (e1, e2, _) | Eimply (e1, e2, _) | Eequiv (e1, e2, _) -> 1 + max (profondeur e1) (profondeur e2)
@@ -354,8 +347,6 @@ let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b
 
 let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTree p) in 
         if not (is_lit p) then p else 
-        let rec aux l p = let p' = norm_term p in if List.exists (equal p') l then p else let p'' = aux (p'::l) p' in p'' in 
-        let p = aux [p] p in
         let rules = applicable p in
         let rec aux p = function 
         | [] -> p
@@ -371,8 +362,9 @@ let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTr
 ;;
 let normalize_fm = let rec aux l p = let p' = normalize_fm p in if List.exists (equal p') (p::l) then p else aux (p::l) p' in
  aux [];;
+let normalize_fm fm = let p = normalize_fm fm in if equal fm p then let p = norm_term fm in if equal fm p then p else normalize_fm p else p;;
 let normalize_list l =
-        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then debug_rule (None, x, p); p) l;;
+        List.map (fun x -> let p = normalize_fm x in if not(equal x p) then p else normalize_fm (norm_term p)) l;;
 
 let _add_rwrt_term s e = let l = (*List.filter (not%is_cyclic*) (get_rwrt_terms e) in
   List.iter (debug_rule ~i:(1)) l;
@@ -392,7 +384,7 @@ let rec add_phrase phrase =
        when (flag = 2) || (flag = 1)
     -> add_rwrt_term name body; add_rwrt_prop name body; phrase
   | Hyp (name, body, flag)
-       (*when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) *)
+       when (flag = 2) || (flag = 1) (*|| (flag = 12) || (flag = 11) *)
     -> if (!Globals.modulo_heuri) then 
             let b = _add_rwrt_term name body in
             let b' = _add_rwrt_prop name body in
@@ -408,7 +400,7 @@ let rec add_phrase phrase =
   |  _ -> phrase
 ;;
 
-let select_rwrt_rules phrases =
+let preprocess phrases =
   let i = if !Globals.debug_rwrt then -1 else 1 in 
   Log.debug i "====================";
   Log.debug i "Select Rewrite Rules";
@@ -420,3 +412,30 @@ let select_rwrt_rules phrases =
   Log.debug i "\n====================";
   res
 ;;
+
+let newnodes fm g l =
+  if equal (normalize_fm fm) fm then [] else
+  [Node.Node {
+    nconc = [];
+    nrule = Ext("modulo", "rwrt", [fm]);
+    nprio = Prop;
+    ngoal = g;
+    nbranches = [| [normalize_fm fm] |];
+  } ];;
+
+Extension.register {
+  Extension.name = "modulo";
+  Extension.newnodes = newnodes;
+  Extension.make_inst = (fun b c d -> []);
+  Extension.add_formula = (fun fm -> ());
+  Extension.remove_formula = (fun _ -> ());
+  Extension.iter_open = (fun _ -> false);
+  Extension.preprocess = preprocess;
+  Extension.add_phrase = (fun _ -> ());
+  Extension.postprocess = (fun x -> x);
+  Extension.to_llproof = (fun tr_expr -> assert false);
+  Extension.declare_context_coq = (fun x -> assert false);
+  Extension.p_rule_coq = (fun a c -> assert false);
+  Extension.predef = (fun a -> []);
+  Extension.predecl = (fun () -> []);
+};;

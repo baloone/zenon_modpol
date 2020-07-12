@@ -25,8 +25,8 @@ SOURCES = log.ml version.ml config.dummy misc.ml heap.ml globals.ml error.ml \
           progress.ml namespace.ml expr.ml \
           phrase.ml llproof.ml mlproof.ml index.ml print.ml \
 	  watch.ml eqrel.ml \
-	  rewrite.ml typer.ml \
-	  step.ml node.ml extension.ml mltoll.ml \
+	  typer.ml \
+	  step.ml node.ml extension.ml rewrite.ml mltoll.ml \
 	  CCVector.ml printBox.ml simplex.ml arith.ml \
           parsezen.mly lexzen.mll \
 	  parsetptp.mly lextptp.mll typetptp.ml \

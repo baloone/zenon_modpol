@@ -15,7 +15,6 @@ val normalize_list : expr list -> expr list;;
 val add_rwrt_term : string -> expr -> unit;;
 val add_rwrt_prop : string -> expr -> unit;;
 
-val select_rwrt_rules : Phrase.phrase list -> Phrase.phrase list;;
 
 
 type rule = (bool option) * expr * expr;;

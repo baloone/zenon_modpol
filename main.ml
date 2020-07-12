@@ -225,7 +225,7 @@ let argspec = [
         "<file>        output errors and warnings to <file> instead of stderr";
   "-x", Arg.String Extension.activate,
      "<ext>            activate extension <ext>";
-  "-modulo", Arg.Set modulo,
+  "-modulo", Arg.Unit (fun () ->  Extension.activate "modulo"),
      "             build the rewrite system from TPTP meta info";
   "-disable-skolem", Arg.Clear skolem,
      "             disable skolemization in the rewrite system";
@@ -409,7 +409,7 @@ let main () =
   let retcode = ref 0 in
   begin try
     let phrases = List.map fst phrases_dep in
-    let phrases = if !Globals.modulo then Rewrite.select_rwrt_rules phrases else phrases in
+    (*let phrases = if !Globals.modulo then Rewrite.select_rwrt_rules phrases else phrases in*)
     let ppphrases = Extension.preprocess phrases in
     List.iter Extension.add_phrase ppphrases;
     if !Globals.debug_rwrt

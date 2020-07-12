@@ -15,5 +15,5 @@ tff(fact_def0, axiom, fact(o) = s(o)).
 tff(inf_def, axiom, ![X:nat, Y:nat]: inf(s(X), s(Y)) = inf(X,Y)).
 tff(inf_def0, axiom, ![Y:nat]: inf(o, s(Y))).
 
-tff(goal, conjecture, $true & inf(fact(s(s(s(s(s(s(s(o)))))))), s(fact(s(s(s(s(s(s(s(o))))))))))).
+tff(goal, conjecture, inf(fact(s(s(s(s(s(s(s(o)))))))), s(fact(s(s(s(s(s(s(s(o))))))))))).
 

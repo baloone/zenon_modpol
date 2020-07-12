@@ -7,7 +7,7 @@ zenonc="$DIR../zenon_modulo -modulo -modulo-heuri -itptp"
 card=${#FILES[*]}
 fails=0
 success=0
-timeout="300s"
+timeout="30s"
 
 echo "$card files to check."
 echo -ne "success: $success/$card, fails: $fails/$card\r"
@@ -27,7 +27,7 @@ do
 done
 echo ""
 echo "FINISHED"
-if (($fails > 4)) 
+if (($fails > 1)) 
 then exit -1
 fi
 

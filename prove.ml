@@ -1203,7 +1203,7 @@ let newnodes_useless st fm g _ =
 let newnodes_extensions state fm g fms =
   let (newnodes, stop) = Node.relevant (Extension.newnodes fm g fms) in
   let insert_node s n =
-    Log.debug 3 "--> %a" Print.pp_mlrule n.nrule;
+    Log.debug (-1) "--> %a" Print.pp_mlrule n.nrule;
     {(*s with*) queue = insert s.queue n}
   in
   let state2 = List.fold_left insert_node state newnodes in
@@ -1584,7 +1584,7 @@ and next_node prm stk st =
       let new_branches = Array.make size [] in
       for i=0 to size-1
       do
-	new_branches.(i) <- Rewrite.normalize_list n.nbranches.(i);
+	new_branches.(i) <- (*Rewrite.normalize_list*) n.nbranches.(i);
       done;
       let new_node = {nconc = n.nconc;
 		      nrule = n.nrule;
