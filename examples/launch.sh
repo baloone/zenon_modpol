@@ -27,7 +27,7 @@ do
 done
 echo ""
 echo "FINISHED"
-if (($fails > 1)) 
+if (($fails > 0)) 
 then exit -1
 fi
 

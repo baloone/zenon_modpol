@@ -269,6 +269,7 @@ let format = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []
   | Eapp (Evar("=",_),_,_) -> []
+  | Enot (Eapp (Evar("=",_),_,_),_) -> []
   | Evar _  | Eapp _ -> [ex -->- etrue]
 
   | Earrow (args, e, _) -> []
@@ -341,14 +342,14 @@ let rec profondeur = function
   
 let shuffle l = let (_, res) = List.split (List.sort (fun (a, _) (b, _) -> a - b) (List.map (fun x -> Random.bits(), x) l)) in res;;
 
-let rec normalize_fm p = let applicable p = rsort (applicable (Some true) propTree p) in 
+let rec normalize_fm p = let applicable p = (*rsort*) (applicable (Some true) propTree p) in 
         if not (is_lit p) then p else 
         let rules = applicable p in
         let rec aux p = function 
         | [] -> p
         | t::q -> let p' = apply_rule t p in  if equal p p' then aux p q 
         else begin 
-                Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);
+                (*Hashtbl.replace rule_freq t ((Hashtbl.find rule_freq t)+1);*)
                 debug_rule t;
                 debug_rule (p-->p');
                 p'
@@ -364,10 +365,10 @@ let normalize_list l =
 
 let _add_rwrt_term s e = let l = (*List.filter (not%is_cyclic*) (get_rwrt_terms e) in
   List.iter (debug_rule ~i:(1)) l;
-  List.iter (fun r -> termTree <<| r; Hashtbl.add rule_freq r 0) l; 
+  List.iter (fun r -> termTree <<| r; (*Hashtbl.add rule_freq r 0*)) l; 
   List.length l > 0;;
-let _add_rwrt_prop s e = let rules = List.filter (not%is_cyclic) (exp_to_rules e) in
-List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0
+let _add_rwrt_prop s e = let l = exp_to_rules e in let rules = List.filter (not%is_cyclic) l in
+List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.length rules > 0 && List.length l = List.length rules
 ;;
 
 let add_rwrt_term s e = let _ = _add_rwrt_term s e in ();;
@@ -380,8 +381,8 @@ let rec add_phrase phrase =
        when (flag = 2) || (flag = 1)
     -> if _add_rwrt_term name body || _add_rwrt_prop name body then phrase else raise (Bad_Rewrite_Rule(name, body))
   | Hyp (name, body, flag)
-       when (flag = 2) || (flag = 1) (*|| (flag = 12) || (flag = 11) *)
-    -> if (!Globals.modulo_heuri) then 
+       when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) 
+    -> if (!Globals.modulo_heuri && get_fv body = []) then 
             let b = _add_rwrt_term name body in
             let b' = _add_rwrt_prop name body in
             (if (b||b') then Rew(name, body, if b then 0 else 1)  else phrase)
@@ -401,6 +402,16 @@ let preprocess phrases =
   Log.debug i "====================";
   Log.debug i "Select Rewrite Rules";
   let res = List.map add_phrase phrases in 
+  let newTree = ref Smap.empty in
+  let f acc (pol, r1, r2) = let r2 = if pol=Some false then nnot(normalize_fm (nnot r2)) else normalize_fm r2 in
+    let tmp, acc = List.partition (fun (pol', r1', r2') -> !!pol' *< pol && equal r1 r1' && equal r2 r2') acc in
+    match tmp, pol with 
+    | [], Some(true) -> (r1 -->+  r2)::acc
+    | [], Some(false) -> (r1 -->-  r2)::acc
+    | _, _ -> (r1-->r2)::acc
+  in
+  List.iter ((<<|)newTree) (List.fold_left f [] ((List.rev % get_prop_rules) ()));
+  propTree := !newTree;
   Log.debug i "--------------term rwrt rules:";
   Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:i) t) !termTree;
   Log.debug i "--------------prop rwrt rules:";
@@ -409,7 +420,30 @@ let preprocess phrases =
   res
 ;;
 
+let rec flat_meta ex = Print.expr (Print.Chan stdout) ex;let rec aux = function
+  | Eand (e1, e2, _) -> aux e1 && aux e2
+  | Emeta _  | Evar _  | Eapp _ | Etrue | Efalse | Etau _ -> true
+  | Eall (_, e, _) | Enot(Eall(_,e,_),_) | Eex(_,e,_) | Enot(Eex(_,e,_),_) -> aux e
+  | Enot (e, _) -> (match e with 
+        | Eimply (e1, e2, _) -> aux e1 && aux (nnot e2)
+        | Eor (e1, e2, _) -> aux (nnot e1) && aux (nnot e2)
+        | Emeta _  | Evar _  | Eapp _ | Etrue | Efalse | Etau _ -> true
+        | _ -> false
+   
+  )
+  | _ -> false in match ex with Emeta(e, _) -> aux ((match e with Eex _ -> enot e | _ -> e)) | _ -> false
+;;
+
 let newnodes fm g l = let p = normalize_fm fm in
+    match fm with | Enot(Eapp(Evar("=",_), [t1; t2],_),_) when (!Globals.flat_meta) && (flat_meta t1 || flat_meta t2) -> 
+    [Node.Node {
+      nconc = [];
+      nrule = Ext("modulo", "meta-rwrt", []);
+      nprio = Prop;
+      ngoal = g;
+      nbranches = [| [efalse] |];
+    }] 
+    | _ ->
   if equal p fm then [] else
   [Node.Node {
     nconc = [];
