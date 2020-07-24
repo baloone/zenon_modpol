@@ -359,7 +359,13 @@ let rec normalize_fm p = let applicable p = (*rsort*) (applicable (Some true) pr
 ;;
 let normalize_fm = let rec aux l p = let p' = normalize_fm p in if List.exists (equal p') (p::l) then p else aux (p::l) p' in
  aux [];;
-let normalize_fm fm = let p = normalize_fm fm in if equal fm p then let p = norm_term fm in if equal fm p then p else normalize_fm p else p;;
+let normalize_fm fm = 
+        let p = normalize_fm fm in 
+        if equal fm p then 
+                let p = norm_term fm in
+                (if equal fm p then p else normalize_fm p)
+        else p
+;;
 let normalize_list l =
         List.map (fun x -> let p = normalize_fm x in if not(equal x p) then p else normalize_fm (norm_term p)) l;;
 
@@ -397,6 +403,13 @@ let rec add_phrase phrase =
   |  _ -> phrase
 ;;
 
+let univ fm = let fv = List.filter_map (fun s -> fv_from_name s fm) (get_fv fm) in
+let rec aux = function
+    [] -> fm
+  | t::q -> eall(t, aux q)
+in let vars, types = List.partition (fun v -> get_type v <> type_type) fv in
+aux (types@vars);;
+
 let preprocess phrases =
   let i = if !Globals.debug_rwrt then -1 else 1 in 
   Log.debug i "====================";
@@ -417,7 +430,7 @@ let preprocess phrases =
   Log.debug i "--------------prop rwrt rules:";
   Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:i) t) !propTree;
   Log.debug i "\n====================";
-  res
+  res@List.map (fun (_, x, _) -> Hyp("", univ (eimply(x,x)), 0)) (get_prop_rules ())
 ;;
 
 let rec flat_meta ex = Print.expr (Print.Chan stdout) ex;let rec aux = function
