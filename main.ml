@@ -227,7 +227,6 @@ let argspec = [
      "<ext>            activate extension <ext>";
   "-modulo", Arg.Unit (fun () ->  Extension.activate "modulo"),
      "             build the rewrite system from TPTP meta info";
-  "-flat-meta", Arg.Set flat_meta, "";      
   "-disable-skolem", Arg.Clear skolem,
      "             disable skolemization in the rewrite system";
   "-disable-miniscoping", Arg.Clear miniscoping,

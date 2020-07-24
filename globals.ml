@@ -26,7 +26,6 @@ let output_dk = ref false;;
 let modulo = ref false;;
 let modulo_heuri = ref false;;
 let skolem = ref true;;
-let flat_meta = ref false;;
 let miniscoping = ref true;;
 let debug_rwrt = ref false;;
 

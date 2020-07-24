@@ -131,7 +131,7 @@ let rec apply_rule (pol, r1, r2) e =
       if List.mem_assq e1 acc then (
         if not (equal (List.assq e1 acc) e2) then raise ApplyRule else acc
         ) else (e1, e2)::acc) else raise ApplyRule
-    | _ -> raise ApplyRule
+    | _ -> print_endline "APPLYRULE"; raise ApplyRule
   in let f_map map = let types, vars = List.partition (fun (x,_) -> get_type x = type_type) map in
     types@@vars
   in 
@@ -430,7 +430,9 @@ let preprocess phrases =
   Log.debug i "--------------prop rwrt rules:";
   Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:i) t) !propTree;
   Log.debug i "\n====================";
-  res@List.map (fun (_, x, _) -> Hyp("", univ (eimply(x,x)), 0)) (get_prop_rules ())
+  (*(List.map 
+  (fun (_, x, _) -> Hyp("", univ (eimply(x,x)), -1))
+  (get_prop_rules ()))@*)res
 ;;
 
 let rec flat_meta ex = Print.expr (Print.Chan stdout) ex;let rec aux = function
@@ -448,18 +450,9 @@ let rec flat_meta ex = Print.expr (Print.Chan stdout) ex;let rec aux = function
 ;;
 
 let newnodes fm g l = let p = normalize_fm fm in
-    match fm with | Enot(Eapp(Evar("=",_), [t1; t2],_),_) when (!Globals.flat_meta) && (flat_meta t1 || flat_meta t2) -> 
-    [Node.Node {
-      nconc = [];
-      nrule = Ext("modulo", "meta-rwrt", []);
-      nprio = Prop;
-      ngoal = g;
-      nbranches = [| [efalse] |];
-    }] 
-    | _ ->
   if equal p fm then [] else
   [Node.Node {
-    nconc = [];
+    nconc = [fm];
     nrule = Ext("modulo", "rwrt", [fm; p]);
     nprio = Prop;
     ngoal = g;

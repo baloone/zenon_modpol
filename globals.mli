@@ -28,7 +28,6 @@ val modulo_heuri : bool ref;;
 val skolem : bool ref;;
 val miniscoping : bool ref;;
 val debug_rwrt : bool ref;;
-val flat_meta : bool ref;;
 
 val output_sig : bool ref;;
 val signature_name : string ref;;
