@@ -458,7 +458,16 @@ let newnodes fm g l = let p = normalize_fm fm in
     ngoal = g;
     nbranches = [| [p] |];
   } ];;
+open Llproof;;
+let to_llproof : Extension.translator = fun tr mlproof hyps -> match mlproof.mlrule with Ext("modulo", "rwrt", [fm; p]) -> 
+    let hyp, arg = hyps.(0) in { 
+      conc=List.map tr mlproof.mlconc;
+      rule=hyp.rule;
+      hyps=hyp.hyps;
+    }, arg
+  | _ -> assert false;;
 
+  
 Extension.register {
   Extension.name = "modulo";
   Extension.newnodes = newnodes;
@@ -468,8 +477,8 @@ Extension.register {
   Extension.iter_open = (fun _ -> false);
   Extension.preprocess = preprocess;
   Extension.add_phrase = (fun _ -> ());
-  Extension.postprocess = (fun x -> x);
-  Extension.to_llproof = (fun tr_expr -> assert false);
+  Extension.postprocess = id;
+  Extension.to_llproof = to_llproof;
   Extension.declare_context_coq = (fun x -> assert false);
   Extension.p_rule_coq = (fun a c -> assert false);
   Extension.predef = (fun a -> []);

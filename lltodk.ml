@@ -265,11 +265,11 @@ let tr_list_vars rule =
 
 (* translate rewrite rules
  *)
-let build_dkrwrt (pol, l, r) = (*TODO: add polarization*)
+let build_dkrwrt (pol, l, r) =
    let vars = tr_list_vars  (l, r)  in
    let t1 = translate_expr l in
    let t2 = translate_expr r in
-   mk_rwrt (vars, t1, t2)
+   mk_rwrt (vars, pol, t1, t2)
 ;;
 
 let select_goal_aux accu phrase =
@@ -1013,24 +1013,27 @@ let output oc phrases llp =
   Log.debug 13 " |- length Sigs = %i" (List.length sigs);
   let sigs = get_sigs_proof sigs (extract_prooftree llp) in
   Log.debug 13 " |- length Sigs = %i" (List.length sigs);
-  let dksigs = translate_sigs sigs in
-  let dksigs = List.map (fun (x, y) -> mk_decl (x, y)) dksigs in
-  (* Resolve dependencies between declarations of symbol in dedukti
-     by applying a topological sort *)
-  let dep_graph = create 1337 in
-  List.iter (add_sym_graph dep_graph) dksigs;
-  let dksigs = topo_sort dep_graph in
+
   (* create dk variables of type prf of an hypothese *)
   let dkctx = mk_prf_var_def phrases in
   (* make list of rewrite rules *)
-  let rules = [] in (*TODO*)
+  let rules = Rewrite.get_term_rules () @ Rewrite.get_prop_rules () in
   let dkrules = List.map build_dkrwrt rules in
   let (name, goal) = List.split (select_goal phrases) in
   let dkgoal = trexpr_dkgoal goal in
   let dkname = List.hd name in
   let prooftree = extract_prooftree llp in
   let dkproof = make_proof_term (List.hd goal) prooftree in
-
+  let sigs = List.fold_left get_sigs_fm sigs (List.map (fun (_,_,x) -> x) rules) in
+  Log.debug 13 " |- length Sigs = %i" (List.length sigs);
+  
+  let dksigs = translate_sigs sigs in
+  let dksigs = List.map (fun (x, y) -> mk_decl (x, y)) dksigs in
+  (* Resolve dependencies between declarations of symbol in dedukti
+  by applying a topological sort *)
+  let dep_graph = create 1337 in
+  List.iter (add_sym_graph dep_graph) dksigs;
+  let dksigs = topo_sort dep_graph in
   if !Globals.signature_name = "" then List.iter (print_line oc) dksigs;
   fprintf oc "\n";
   if !Globals.signature_name = "" then List.iter (print_line oc) dkctx;

@@ -29,6 +29,15 @@ jobs:
                 - name: install dependencies
                   run: |
                         opam install zarith
+                - name: install polarized dedukti
+                  run: |
+                        git clone https://github.com/gburel/Dedukti/
+                        cd Dedukti
+                        git checkout polarization
+                        opam install ocamlbuild menhir
+                        eval $(opam env)
+                        make
+                        make install
                 - uses: actions/checkout@v1
                 - name: build zenon
                   run: |
