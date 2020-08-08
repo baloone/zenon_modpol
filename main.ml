@@ -229,6 +229,8 @@ let argspec = [
      "             build the rewrite system from TPTP meta info";
   "-disable-skolem", Arg.Clear skolem,
      "             disable skolemization in the rewrite system";
+  "-brwrt", Arg.Set brwrt,
+     "             Turns less axioms to rewrite rules";
   "-disable-miniscoping", Arg.Clear miniscoping,
      "             disable miniscoping in the rewrite system";
  "-modulo-heuri", Arg.Set modulo_heuri,

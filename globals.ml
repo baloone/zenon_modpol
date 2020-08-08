@@ -28,6 +28,7 @@ let modulo_heuri = ref false;;
 let skolem = ref true;;
 let miniscoping = ref true;;
 let debug_rwrt = ref false;;
+let brwrt = ref false;;
 
 let output_sig = ref false;;
 let signature_name = ref "";;

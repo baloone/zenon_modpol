@@ -90,7 +90,7 @@ let termTree = ref Smap.empty;;
 let get_all_rules tree = Smap.fold (fun k (DecTree(t,_)) acc -> acc @ t) !tree [];;
 let get_prop_rules () = get_all_rules propTree;;
 let get_term_rules () = get_all_rules termTree;;
-
+let used_rules = ref [];;
 let rec matching_rules pol tree expr = 
         let fmt l = List.filter (fun (pol',_,_) -> pol *< pol') l in
         begin
@@ -137,7 +137,9 @@ let rec apply_rule (pol, r1, r2) e =
   in 
   try let map = f_map (aux (match pol with Some _ -> Some true | _ -> pol) [] r1 e) in
   (if pole e then (fun x -> x) else enot) (try 
-    substitute map r2
+    let ret = substitute map r2 in 
+    used_rules := if List.mem (pol, r1, r2) !used_rules then !used_rules else (pol, r1, r2)::!used_rules;
+    ret
   with _ -> debug_rule ~i:(-1) (pol, r1, r2); debug_rule ~i:(-1) (None, e, r2); raise (Ill_typed_substitution map))
     with ApplyRule -> e 
 
@@ -381,13 +383,20 @@ let add_rwrt_term s e = let _ = _add_rwrt_term s e in ();;
 let add_rwrt_prop s e = let _ = _add_rwrt_prop s e in ();;
 ;;
 
+let axf s = !Globals.brwrt && 
+  try
+  String.sub s 0 4 = "ax_f" && String.sub s (String.length s - 4) 4 = "_def" && 
+  (int_of_string (String.sub s 4 (String.length s - 8))) >= 0
+  with _ -> false
+
+
 let rec add_phrase phrase =
   match phrase with
   | Rew (name, body, flag)
        when (flag = 2) || (flag = 1)
     -> if _add_rwrt_term name body || _add_rwrt_prop name body then phrase else raise (Bad_Rewrite_Rule(name, body))
   | Hyp (name, body, flag)
-       when (flag = 2) || (flag = 1) || (flag = 12) || (flag = 11) 
+  when not (axf name) && ((flag = 2) || (flag = 1)) 
     -> if (!Globals.modulo_heuri && get_fv body = []) then 
             let b = _add_rwrt_term name body in
             let b' = _add_rwrt_prop name body in
