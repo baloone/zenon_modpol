@@ -267,29 +267,18 @@ let get_rwrt_from_def = function
 
 let id x = x;;
 let format = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping else id)% nnf;;
-
+let format = id;;
 let rec exp_to_rules ex = match ex with
-  | Emeta (e, _) -> []
   | Eapp (Evar("=",_),_,_) -> []
   | Enot (Eapp (Evar("=",_),_,_),_) -> []
-  | Evar _  | Eapp _ -> [ex -->- etrue]
-
-  | Earrow (args, e, _) -> []
-
+  | Evar _  | Eapp _ -> (exp_to_rules (eimply(etrue, ex)))
   | Enot (e, _) -> (exp_to_rules (eimply(e, efalse)))
-  | Eand (e1, e2, _) -> (exp_to_rules e1)@(exp_to_rules e2)
-  | Eor (e1, e2, _) -> []
   | Eimply (e1, e2, _) ->  
     (if is_lit e1 && (get_fv e2 <<? get_fv e1) then [e1 -->+ (format e2)] else []) @@
     (if is_lit e2 && (get_fv e1 <<? get_fv e2) then [e2 -->- nnf (nnot (format (nnot e1)))] else [])
   | Eequiv (e1, e2, _) -> (exp_to_rules (eimply(e1, e2))) @@ (exp_to_rules (eimply(e2, e1)))
- 
-  | Etrue | Efalse -> []
-
   | Eall (e1, e2, _) -> exp_to_rules e2
-  | Eex (e1, e2, _) -> []
-  | Etau (e1, e2, _) -> []
-  | Elam (e1, e2, _) -> []
+  | _ -> []
 ;;
 let applicable = let rec aux pol tree = function
         | Enot(e, _) -> aux (!!pol) tree e
@@ -382,13 +371,22 @@ List.iter (fun r -> propTree <<| r; Hashtbl.add rule_freq r 0) rules; List.lengt
 let add_rwrt_term s e = let _ = _add_rwrt_term s e in ();;
 let add_rwrt_prop s e = let _ = _add_rwrt_prop s e in ();;
 ;;
+let blacklist = List.map ((^)"ax_") [
+];;
 
-let axf s = !Globals.brwrt && 
-  try
+let axf s = !Globals.brwrt && (List.mem s blacklist || 
+  try String.sub s 0 6 = "ax_mem" || 
   String.sub s 0 4 = "ax_f" && String.sub s (String.length s - 4) 4 = "_def" && 
   (int_of_string (String.sub s 4 (String.length s - 8))) >= 0
-  with _ -> false
+  with _ -> false)
 
+let ppreprocess phrases = let rec aux = function
+  | Hyp(name, body, flag)::q -> let rec aux' = function
+    | Eall(v, fm, _) -> List.map (fun x -> eall(v, x)) (aux' fm)
+    | Eand(fm1, fm2, _) -> List.flatten (List.map aux' [fm1; fm2])
+    | fm -> [fm] in List.mapi (fun i e -> Hyp(name, e, flag)) (aux' body) @ (aux q)
+  | t::q -> t::(aux q)
+  | [] -> [] in aux phrases
 
 let rec add_phrase phrase =
   match phrase with
@@ -396,7 +394,7 @@ let rec add_phrase phrase =
        when (flag = 2) || (flag = 1)
     -> if _add_rwrt_term name body || _add_rwrt_prop name body then phrase else raise (Bad_Rewrite_Rule(name, body))
   | Hyp (name, body, flag)
-  when not (axf name) && ((flag = 2) || (flag = 1)) 
+  when not (axf name) && ((flag = 2) || (flag = 1))
     -> if (!Globals.modulo_heuri && get_fv body = []) then 
             let b = _add_rwrt_term name body in
             let b' = _add_rwrt_prop name body in
@@ -420,6 +418,7 @@ in let vars, types = List.partition (fun v -> get_type v <> type_type) fv in
 aux (types@vars);;
 
 let preprocess phrases =
+  let phrases = ppreprocess phrases in
   let i = if !Globals.debug_rwrt then -1 else 1 in 
   Log.debug i "====================";
   Log.debug i "Select Rewrite Rules";
@@ -439,9 +438,9 @@ let preprocess phrases =
   Log.debug i "--------------prop rwrt rules:";
   Smap.iter (fun k (DecTree(t,_)) -> List.iter (debug_rule ~i:i) t) !propTree;
   Log.debug i "\n====================";
-  (*(List.map 
+  (List.map 
   (fun (_, x, _) -> Hyp("", univ (eimply(x,x)), -1))
-  (get_prop_rules ()))@*)res
+  (get_prop_rules ()))@res
 ;;
 
 let rec flat_meta ex = Print.expr (Print.Chan stdout) ex;let rec aux = function
