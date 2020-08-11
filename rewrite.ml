@@ -65,6 +65,7 @@ let debug_rule ?(i=1) (pol, e1, e2) =
 ;;
 
 let rec is_lit = function
+  | Eapp (Evar (s,_),_,_) when String.get s 0 = '=' || String.get s 0 = '$' -> false
   | Evar _ | Eapp _ -> true
   | Enot (e, _) -> is_lit e 
   | _ -> false
@@ -379,12 +380,34 @@ let axf s = !Globals.brwrt && (List.mem s blacklist ||
   String.sub s 0 4 = "ax_f" && String.sub s (String.length s - 4) 4 = "_def" && 
   (int_of_string (String.sub s 4 (String.length s - 8))) >= 0
   with _ -> false)
-
+let rec simpl f = let rec aux = function
+  | Eand(Etrue, e, _) | Eand(e, Etrue, _) -> aux e
+  | Eand(Efalse, e, _) | Eand(e, Efalse, _) -> efalse
+  | Eor(Etrue, e, _) | Eor(e, Etrue, _) -> etrue
+  | Eor(Efalse, e, _) | Eor(e, Efalse, _) -> aux e
+  | Eand(a, b, _) -> (eand(aux a, aux b))
+  | Eor(a, b, _) -> (eor(aux a, aux b))
+  | Eall(a, b, _) -> eall(a, aux b)
+  | Eex(a, b, _) -> eex(a, aux b)
+  | Eimply(Etrue, fm, _) -> aux fm
+  | Eimply(fm, Efalse, _) -> aux (nnot fm)
+  | Eimply(_, Etrue, _) | Eimply(Efalse, _, _) -> etrue
+  | Eimply(a, b, _) -> (eimply(aux a, aux b))
+  | Eequiv(Etrue, fm, _) | Eequiv(fm, Etrue, _) -> aux fm
+  | Eequiv(Efalse, fm, _) | Eequiv(fm, Efalse, _) -> aux (nnot fm)
+  | Eequiv(a, b, _) -> (eequiv(aux a, aux b))
+  | Enot (Efalse, _) -> etrue
+  | Enot (Etrue, _) -> efalse
+  | Enot(Enot(fm,_),_) -> aux fm
+  | Enot(fm, _) -> nnot(aux fm)
+  | fm -> fm in let f' = aux f in if equal f f' then f else simpl f'
+;;
 let ppreprocess phrases = let rec aux = function
   | Hyp(name, body, flag)::q -> let rec aux' = function
-    | Eall(v, fm, _) -> List.map (fun x -> eall(v, x)) (aux' fm)
+    | Eall(v, fm, _) -> List.map (fun x -> eall(v, simpl x)) (aux' fm)
+    | Eequiv(fm1, fm2, _) -> List.flatten (List.map aux' [eimply(fm1, fm2); eimply(fm2, fm1)])
     | Eand(fm1, fm2, _) -> List.flatten (List.map aux' [fm1; fm2])
-    | fm -> [fm] in List.mapi (fun i e -> Hyp(name, e, flag)) (aux' body) @ (aux q)
+    | fm -> [fm] in List.mapi (fun i e -> Hyp(name^(string_of_int i), e, flag)) (aux' body) @ (aux q)
   | t::q -> t::(aux q)
   | [] -> [] in aux phrases
 

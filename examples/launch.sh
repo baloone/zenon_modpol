@@ -2,8 +2,7 @@
 shopt -s nullglob
 DIR="$(dirname "${BASH_SOURCE[0]}")/"
 FILES=($DIR*.p)
-#zenonc="../znmh"
-zenonc="$DIR../zenon_modulo -modulo -modulo-heuri -itptp -x arith -brwrt"
+zenonc="$DIR../znmh -x arith"
 card=${#FILES[*]}
 fails=0
 success=0
