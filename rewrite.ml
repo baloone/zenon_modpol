@@ -65,7 +65,7 @@ let debug_rule ?(i=1) (pol, e1, e2) =
 ;;
 
 let rec is_lit = function
-  | Eapp (Evar (s,_),_,_) when String.get s 0 = '=' || String.get s 0 = '$' -> false
+  | Eapp (Evar (s,_),_,_) when String.get s 0 = '$' -> false
   | Evar _ | Eapp _ -> true
   | Enot (e, _) -> is_lit e 
   | _ -> false
