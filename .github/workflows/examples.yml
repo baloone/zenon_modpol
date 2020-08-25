@@ -29,7 +29,8 @@ jobs:
                 - name: install dependencies
                   run: |
                         opam install zarith
-                - name: install polarized dedukti
+                - uses: actions/checkout@v1
+                - name: run examples
                   run: |
                         git clone https://github.com/gburel/Dedukti/
                         cd Dedukti
@@ -38,13 +39,8 @@ jobs:
                         eval $(opam env)
                         make
                         make install
-                - uses: actions/checkout@v1
-                - name: build zenon
-                  run: |
+                        cd ..
                         eval $(opam env)
                         ./configure
                         make
-                - name: run examples
-                  run: |
                         ./examples/launch.sh -d
-
