@@ -267,7 +267,7 @@ let get_rwrt_from_def = function
 
 
 let id x = x;;
-let format = (if !Globals.skolem then skolem else id) % (if !Globals.miniscoping then miniscoping else id)% nnf;;
+let format = (if !Globals.skolem then skolem % (if !Globals.miniscoping then miniscoping else id) % nnf else id);;
 
 let rec exp_to_rules ex = match ex with
   | Emeta (e, _) -> []

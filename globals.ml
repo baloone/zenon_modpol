@@ -25,8 +25,8 @@ let num_expr = ref 0;;
 let output_dk = ref false;;
 let modulo = ref false;;
 let modulo_heuri = ref false;;
-let skolem = ref true;;
-let miniscoping = ref true;;
+let skolem = ref false;;
+let miniscoping = ref false;;
 let debug_rwrt = ref false;;
 let brwrt = ref false;;
 
