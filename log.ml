@@ -38,9 +38,9 @@ let get_total_time, get_start_time =
 (** {2 Misc} *)
 
 let clear_line () =
-  output_string Stdlib.stdout
+  output_string stdout
     "\r                                                         \r";
-  flush Stdlib.stdout
+  flush stdout
 
 
 let debug_level_ = ref 0
