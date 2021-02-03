@@ -5,7 +5,11 @@ jobs:
                 runs-on: ubuntu-latest
                 strategy:
                   matrix:
-                    ocaml-version:
+                    ocaml:
+                      - 4.11.1
+                      - 4.11.0
+                      - 4.10.2
+                      - 4.10.1
                       - 4.10.0
                       - 4.09.1
                       - 4.09.0
@@ -13,18 +17,22 @@ jobs:
                       - 4.08.0
                 steps:
                 - name: Set up OCaml
-                  uses: avsm/setup-ocaml@v1.0.1
-
+                  run: |
+                        sudo add-apt-repository ppa:avsm/ppa
+                        sudo apt update  
+                        sudo apt install ocaml opam
+                        opam init -a
+                        opam switch create ${{matrix.ocaml}} -j 2
+                        eval $(opam env)
                 - name: install dependencies
                   run: |
-                        opam install zarith
+                        opam install zarith -y -j 2
                 - uses: actions/checkout@v1
                 - name: run examples
                   run: |
-                        git clone https://github.com/gburel/Dedukti/
+                        git clone https://github.com/baloone/Dedukti
                         cd Dedukti
-                        git checkout polarization
-                        opam install ocamlbuild menhir
+                        opam install ocamlbuild menhir -y -j 2
                         eval $(opam env)
                         make
                         make install
