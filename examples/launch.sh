@@ -15,12 +15,14 @@ for ((j=0; j < card; j++))
 do
 	i=${FILES[$j]}
 	if $zenonc -max-time $timeout $i > /dev/null 2>&1; then
+		if [[ "$1" == "-d" ]]; then
 		$zenonc -max-time $timeout $i -odk > $i\.dk 2> /dev/null
 		if dkcheck -nl $i\.dk > /dev/null 2>&1; then 
 			echo -e "\e[32mSUCCESS\e[0m File '$i' was successfully checked."
 		else echo -e "\e[31mCHECK FAIL\e[0m File '$i'."
 		fi
 		rm $i\.dk
+		fi
 		((success++))
 	else
 		((fails++))
